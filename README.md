@@ -93,35 +93,81 @@ com.forensix/
 
 ---
 
-## 🚀 Getting Started & Build Instructions
+## 🚀 Setup & Execution Guide
 
-### Prerequisites
-* **Java 17+ / Java 21 JDK**
-* **Apache Maven 3.8+**
-* Administrator / Root privileges (required for raw block IO device access).
+### 📋 Prerequisites
+* **Java 17 or Java 21 JDK** installed (e.g. Eclipse Adoptium Temurin or Oracle JDK).
+* **Apache Maven 3.8+** (or IntelliJ IDEA, which bundles Maven automatically).
+* **Administrator Privileges:** Recommended on Windows (right-click -> "Run as administrator") to allow raw physical sector/block IOCTL disk access (`\\.\PhysicalDriveX`).
 
-### Compilation & Build
-```bash
-# Clone repository
-git clone https://github.com/PrashantJaybhaye/SIH26149-prototype.git
-cd SIH26149-prototype
+---
 
-# Build with Maven
+### ⚡ Method 1: One-Click Quick Run (Windows)
+
+The simplest way to run the platform is using the included launcher script:
+
+1. Locate **`run.bat`** in the project root directory (`d:\Project\Forensix\run.bat`).
+2. **Double-click `run.bat`** (or run `.\run.bat` in terminal).
+   - *The script includes automatic UAC self-elevation (`-Verb RunAs`): if opened normally, Windows will prompt for Administrator permission to unlock raw block IOCTL device access.*
+   - *It also automatically detects whether Maven is installed on your PATH or bundled in IntelliJ IDEA.*
+3. The interactive console menu will appear immediately.
+
+---
+
+### 💻 Method 2: Running via IntelliJ IDEA (Recommended for Development)
+
+1. Open **IntelliJ IDEA**.
+2. Select **File > Open...** and choose the `d:\Project\Forensix` folder.
+3. Wait for IntelliJ to sync the Maven project dependencies (`pom.xml`).
+4. Navigate to:  
+   `src/main/java/com/forensix/Main.java`
+5. Click the green **Run (▶)** arrow next to `public static void main(String[] args)` or press `Shift + F10`.
+6. Use the built-in terminal/Run console to interact with the menu.
+
+---
+
+### 🖥️ Method 3: Running via Terminal / Command Prompt / PowerShell
+
+Open Command Prompt or PowerShell in the project directory:
+
+```powershell
+# 1. Clean and compile the source code
 mvn clean compile
-```
 
-### Running the Interactive CLI Dashboard
-```bash
-# Execute Main Application
+# 2. Launch the interactive Forensix platform
 mvn exec:java -Dexec.mainClass="com.forensix.Main"
 ```
 
-### Automated Demonstration Mode
-Selecting **Option 5** in the main menu executes an end-to-end demonstration:
-1. Creates a synthetic 10 MB `.raw` disk image with embedded JPEG and PDF forensic evidence.
-2. Carves and extracts evidence files into `carved_evidence/`.
-3. Sanitizes the raw disk image using **NIST SP 800-88 Clear (Pass 1)** while measuring entropy.
-4. Generates a court-ready PDF Audit Certificate in `reports/`.
+> **Note if `mvn` is not recognized:**  
+> If Maven is not added to your Windows system PATH, you can run directly using IntelliJ's bundled Maven:
+> ```powershell
+> & "C:\Program Files\JetBrains\IntelliJ IDEA 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd" compile exec:java
+> ```
+
+---
+
+### 🧪 Automated Demonstration & Verification (Option 5)
+
+To quickly test all 4 core modules without risking real drives:
+1. Launch the application and type **`5`** (End-to-End System Demonstration).
+2. The benchmark engine will:
+   - Generate a 10 MB mock raw disk image (`test_evidence.raw`) containing embedded hidden JPEG and PDF files.
+   - Run the **File Carver** to extract the files into `carved_evidence/` and compute SHA-256 hashes.
+   - Run the **Secure Drive Eraser** (NIST SP 800-88 Clear) and calculate live Shannon Entropy ($0.0000$ bits/byte).
+   - Generate a tamper-evident court-admissible audit certificate PDF in `reports/`.
+
+---
+
+## 🎮 Main Menu Options Explained
+
+| Option | Name | Description |
+| :---: | :--- | :--- |
+| **1** | **Detect Storage Drives** | Queries the Win32/POSIX subsystem for physical disks, size, serials, and flags OS system drives. |
+| **2** | **Secure Drive Eraser** | Block-level sanitization using NIST 800-88, DoD 5220.22-M, or Zero-fill with live Shannon entropy calculation. |
+| **3** | **Selective File & Slack Eraser** | Multi-pass file shredding, slack space scrubbing, timestamp epoch zeroing, and MFT name scrambling. |
+| **4** | **Advanced File Carving** | Scans raw sectors/images for magic bytes (JPEG, PNG, PDF, ZIP), validates file structure, and exports carved evidence. |
+| **5** | **End-to-End Demonstration** | Automated test suite verifying carving, wiping, entropy validation, and PDF generation on synthetic media. |
+| **6** | **Exit** | Safely exits the platform. |
 
 ---
 

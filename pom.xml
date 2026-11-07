@@ -15,9 +15,27 @@
         <jna.version>5.14.0</jna.version>
         <pdfbox.version>3.0.2</pdfbox.version>
         <jackson.version>2.17.0</jackson.version>
+        <javafx.version>21.0.5</javafx.version>
     </properties>
 
     <dependencies>
+        <!-- JavaFX Desktop UI -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-fxml</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+
         <!-- JNA for Native OS Hardware & Disk IOCTL Access -->
         <dependency>
             <groupId>net.java.dev.jna</groupId>
