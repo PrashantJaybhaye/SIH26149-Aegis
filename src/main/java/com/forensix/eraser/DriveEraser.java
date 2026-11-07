@@ -30,7 +30,7 @@ public class DriveEraser {
         }
 
         long totalBytes = device.getTotalBytes();
-        int bufferSize = Math.max(device.getSectorSize() * 1024, 1024 * 1024); // 1 MB buffer chunk
+        int bufferSize = Math.max(device.getSectorSize() * 2048, 4 * 1024 * 1024); // 4 MB high-throughput buffer
         byte[] buffer = new byte[bufferSize];
         SecureRandom random = new SecureRandom();
 
@@ -115,7 +115,7 @@ public class DriveEraser {
 
         int totalPasses = standard.getTotalPasses();
         SecureRandom random = new SecureRandom();
-        int bufferSize = 1024 * 1024; // 1 MB buffer
+        int bufferSize = 4 * 1024 * 1024; // 4 MB high-speed buffer
         byte[] buffer = new byte[bufferSize];
 
         // Pre-scan total number of files for accurate progress tracking

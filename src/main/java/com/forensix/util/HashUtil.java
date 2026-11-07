@@ -1,5 +1,8 @@
 package com.forensix.util;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.security.MessageDigest;
 
 public class HashUtil {
@@ -14,6 +17,23 @@ public class HashUtil {
             digest.update(data, 0, length);
             byte[] hashBytes = digest.digest();
             return bytesToHex(hashBytes);
+        } catch (Exception e) {
+            return "UNKNOWN";
+        }
+    }
+
+    public static String calculateSHA256(File file) {
+        if (file == null || !file.exists() || !file.isFile()) {
+            return "UNKNOWN";
+        }
+        try (InputStream fis = new FileInputStream(file)) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[65536];
+            int n;
+            while ((n = fis.read(buffer)) > 0) {
+                digest.update(buffer, 0, n);
+            }
+            return bytesToHex(digest.digest());
         } catch (Exception e) {
             return "UNKNOWN";
         }

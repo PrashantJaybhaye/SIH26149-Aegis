@@ -8,6 +8,7 @@ import com.forensix.model.CarvedFile;
 import com.forensix.model.SanitizationStandard;
 import com.forensix.model.StorageDevice;
 import com.forensix.nativeio.StorageDetector;
+import com.forensix.ui.GuiLauncher;
 import com.forensix.util.HashUtil;
 
 import java.io.File;
@@ -22,6 +23,28 @@ public class Main {
         java.util.logging.Logger.getLogger("org.apache.pdfbox").setLevel(java.util.logging.Level.OFF);
         java.util.logging.Logger.getLogger("org.apache.fontbox").setLevel(java.util.logging.Level.OFF);
 
+        boolean forceCli = false;
+        for (String arg : args) {
+            if (arg.equalsIgnoreCase("--cli") || arg.equalsIgnoreCase("-cli")) {
+                forceCli = true;
+                break;
+            }
+        }
+
+        if (forceCli) {
+            runCli();
+        } else {
+            try {
+                // Launch modern JavaFX Desktop GUI by default
+                GuiLauncher.main(args);
+            } catch (Throwable t) {
+                System.out.println("[INFO] Desktop GUI initialization deferred (" + t.getMessage() + "). Starting CLI mode...");
+                runCli();
+            }
+        }
+    }
+
+    public static void runCli() {
         System.out.println("=========================================================================================");
         System.out.println("    FORENSIX: Integrated Secure Data Erasure & Advanced File Recovery Platform           ");
         System.out.println("    National Technical Research Organisation (NTRO) - SIH26149 Prototype                   ");
@@ -36,8 +59,9 @@ public class Main {
             System.out.println("3. Run Selective File & Slack Space Eraser");
             System.out.println("4. Run Advanced File Carving & Recovery (Raw Sector Scanner)");
             System.out.println("5. Run End-to-End System Demonstration (Mock Disk Image Test)");
-            System.out.println("6. Exit");
-            System.out.print("Select Option [1-6]: ");
+            System.out.println("6. Launch Graphical Desktop App (JavaFX GUI)");
+            System.out.println("7. Exit");
+            System.out.print("Select Option [1-7]: ");
 
             String choice = scanner.nextLine().trim();
 
@@ -58,10 +82,19 @@ public class Main {
                     runFullDemo();
                     break;
                 case "6":
+                    new Thread(() -> {
+                        try {
+                            GuiLauncher.main(new String[0]);
+                        } catch (Exception e) {
+                            System.err.println("Could not launch GUI: " + e.getMessage());
+                        }
+                    }).start();
+                    break;
+                case "7":
                     System.out.println("Exiting Forensix Platform. Stay Secure!");
                     return;
                 default:
-                    System.out.println("Invalid choice. Please enter a number between 1 and 6.");
+                    System.out.println("Invalid choice. Please enter a number between 1 and 7.");
             }
         }
     }
@@ -166,7 +199,7 @@ public class Main {
 
         File outputDir = new File("carved_output");
         System.out.println("\n[MODULE 3] Starting Forensic Magic-Byte File Carving engine...");
-        List<CarvedFile> carved = FileCarver.carveDevice(path, outputDir, (bytes, total, found) -> {
+        List<CarvedFile> carved = FileCarver.carveDevice(path, outputDir, (phase, curSec, totSec, bytes, total, found, entropy, latest) -> {
             String scannedStr = (bytes >= 1024L * 1024L * 1024L) ?
                     String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0)) :
                     String.format("%.2f MB", bytes / (1024.0 * 1024.0));
@@ -176,10 +209,10 @@ public class Main {
                         String.format("%.2f GB", total / (1024.0 * 1024.0 * 1024.0)) :
                         String.format("%.2f MB", total / (1024.0 * 1024.0));
                 double pct = Math.min(100.0, (double) bytes / total * 100);
-                System.out.printf("\r[CARVING SCAN] Progress: %.1f%% (%s / %s) | Files Extracted: %d",
-                        pct, scannedStr, totalStr, found);
+                System.out.printf("\r[%s] Progress: %.1f%% (%s / %s) | Files Extracted: %d | Entropy: %.4f",
+                        phase, pct, scannedStr, totalStr, found, entropy);
             } else {
-                System.out.printf("\r[CARVING SCAN] Scanned: %s | Files Extracted: %d", scannedStr, found);
+                System.out.printf("\r[%s] Scanned: %s | Files Extracted: %d | Entropy: %.4f", phase, scannedStr, found, entropy);
             }
         });
 
@@ -230,7 +263,7 @@ public class Main {
             // 2. Perform File Carving on Raw Evidence
             System.out.println("\n[STEP 2] Running Advanced File Carving on Raw Disk Image...");
             File outputDir = new File("carved_evidence");
-            List<CarvedFile> carved = FileCarver.carveDevice(mockImage.getAbsolutePath(), outputDir, null);
+            List<CarvedFile> carved = FileCarver.carveDevice(mockImage.getAbsolutePath(), outputDir);
 
             System.out.println("\nExtracted Evidence Results:");
             for (CarvedFile cf : carved) {

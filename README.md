@@ -36,6 +36,7 @@ Existing tools force cybersecurity teams and law enforcement agencies to use sep
 | Component | Technology / Library | Description |
 | :--- | :--- | :--- |
 | **Language** | Java 17 / 21 | Modern JDK platform for cross-platform execution |
+| **GUI Framework** | OpenJFX (JavaFX 21) | Cyber-forensic desktop dashboard with real-time entropy charting |
 | **Build System** | Apache Maven | Project dependency management & build orchestration |
 | **Native OS Access** | JNA (Java Native Access) | Win32 API & POSIX system calls for low-level block IOCTLs |
 | **PDF Reporting** | Apache PDFBox 3.0.2 | Cryptographic PDF certificate generator for legal audits |
@@ -48,12 +49,18 @@ Existing tools force cybersecurity teams and law enforcement agencies to use sep
 
 ```
 com.forensix/
-├── Main.java                    ← CLI menu orchestrator
+├── Main.java                    ← Unified application entry point (GUI / CLI fallback)
+├── ui/
+│   ├── ForensixApp.java         ← JavaFX Desktop Application & Disk Drill 4-Step Flow
+│   ├── DiskDrillComponents.java ← Vector Hardware Disk, Category Cards & Success Badges
+│   └── GuiLauncher.java         ← Standard classpath bootstrap launcher
+├── blockchain/
+│   └── AuditBlockchain.java     ← Module 5: SHA-256 Chained Cryptographic Audit Ledger
 ├── audit/
-│   └── ReportGenerator.java     ← Module 4: PDF certificate generator
+│   └── ReportGenerator.java     ← Module 4: PDF certificate generator (Sanitization & Recovery)
 ├── carver/
-│   ├── FileCarver.java          ← Module 3: Raw sector file carving engine
-│   └── FileSignature.java       ← Magic-byte signatures (JPEG, PNG, PDF, ZIP)
+│   ├── FileCarver.java          ← Module 3: Raw sector file carving engine with live entropy
+│   └── FileSignature.java       ← Forensic signatures (JPEG, PNG, MP4, AVI, MP3, WAV, PDF, ZIP, 7Z, DB)
 ├── eraser/
 │   ├── DriveEraser.java         ← Module 1: Block-level drive sanitization
 │   └── FileEraser.java          ← Module 2: Selective file + slack space wiping
@@ -104,13 +111,16 @@ com.forensix/
 
 ### ⚡ Method 1: One-Click Quick Run (Windows)
 
-The simplest way to run the platform is using the included launcher script:
+The simplest way to run the platform is using the included launcher scripts:
 
-1. Locate **`run.bat`** in the project root directory (`d:\Project\Forensix\run.bat`).
-2. **Double-click `run.bat`** (or run `.\run.bat` in terminal).
-   - *The script includes automatic UAC self-elevation (`-Verb RunAs`): if opened normally, Windows will prompt for Administrator permission to unlock raw block IOCTL device access.*
-   - *It also automatically detects whether Maven is installed on your PATH or bundled in IntelliJ IDEA.*
-3. The interactive console menu will appear immediately.
+* **Desktop Application (JavaFX GUI):**  
+  Double-click **`run.bat`** or **`run-gui.bat`**  
+  *(Opens the modern dark-themed cybersecurity GUI with real-time graphs and tables).*
+* **Terminal Dashboard (CLI Mode):**  
+  Double-click **`run-cli.bat`**  
+  *(Opens the interactive numbered terminal menu).*
+
+> *Both scripts feature automatic UAC self-elevation (`-Verb RunAs`): when launched, Windows prompts for Administrator permission to unlock raw block IOCTL device access and auto-detects Maven.*
 
 ---
 

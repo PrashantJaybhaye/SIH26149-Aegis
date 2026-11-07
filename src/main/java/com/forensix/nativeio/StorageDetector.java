@@ -29,10 +29,10 @@ public class StorageDetector {
     private static List<StorageDevice> detectWindowsDrives() {
         List<StorageDevice> list = new ArrayList<>();
         try {
-            // Run PowerShell Get-Disk command to query physical disks reliably
+            // Run PowerShell Get-Disk command to query physical disks reliably (requires Admin or CIM access)
             ProcessBuilder pb = new ProcessBuilder(
                     "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                    "Get-Disk | Select-Number, FriendlyName, SerialNumber, Size, SectorSize, BusType, IsSystem | ConvertTo-Json"
+                    "Get-Disk | Select-Object Number, FriendlyName, SerialNumber, Size, SectorSize, BusType, IsSystem | ConvertTo-Json"
             );
             Process process = pb.start();
 
@@ -45,32 +45,56 @@ public class StorageDetector {
             process.waitFor();
 
             String json = jsonOutput.toString().trim();
-            if (!json.isEmpty()) {
+            if (!json.isEmpty() && !json.contains("Error") && !json.contains("Exception")) {
                 parsePowerShellDiskOutput(json, list);
             }
         } catch (Exception e) {
-            System.err.println("Fallback to basic logical drives enumeration on Windows: " + e.getMessage());
+            System.err.println("PowerShell disk enumeration notice: " + e.getMessage());
         }
 
-        // Fallback or supplementary logical drives list if PowerShell disk listing is empty or fails
-        if (list.isEmpty()) {
-            File[] roots = File.listRoots();
-            javax.swing.filechooser.FileSystemView fsv = javax.swing.filechooser.FileSystemView.getFileSystemView();
-            for (File root : roots) {
-                boolean isSys = root.getAbsolutePath().equalsIgnoreCase("C:\\");
-                long total = root.getTotalSpace();
-                if (total > 0) {
-                    String systemName = fsv.getSystemDisplayName(root);
-                    if (systemName == null || systemName.isEmpty()) {
-                        systemName = "Logical Volume (" + root.getAbsolutePath().substring(0, 2) + ")";
+        // Always query logical drive roots to ensure all mounted volumes (USBs, external disks) are accessible
+        File[] roots = File.listRoots();
+        javax.swing.filechooser.FileSystemView fsv = javax.swing.filechooser.FileSystemView.getFileSystemView();
+        for (File root : roots) {
+            String rootPath = root.getAbsolutePath(); // e.g. "E:\" or "C:\"
+            boolean isSys = rootPath.equalsIgnoreCase("C:\\");
+            long total = root.getTotalSpace();
+            if (total > 0) {
+                String systemName = fsv.getSystemDisplayName(root);
+                String driveLetter = rootPath.length() >= 2 ? rootPath.substring(0, 2) : rootPath;
+                if (systemName == null || systemName.isEmpty()) {
+                    systemName = "USB / Logical Volume (" + driveLetter + ")";
+                }
+
+                // Format raw Win32 volume path without trailing backslash: "\\.\E:"
+                String rawDevicePath = "\\\\.\\" + driveLetter;
+
+                // Check if this physical disk was already detected to avoid duplicates
+                boolean exists = false;
+                for (StorageDevice sd : list) {
+                    if (sd.getDevicePath().equalsIgnoreCase(rawDevicePath)) {
+                        exists = true;
+                        break;
                     }
+                }
+
+                if (!exists) {
+                    String fsType = "NTFS";
+                    try {
+                        java.nio.file.FileStore store = java.nio.file.Files.getFileStore(root.toPath());
+                        String type = store.type();
+                        if (type != null && !type.trim().isEmpty()) {
+                            fsType = type.trim().toUpperCase();
+                        }
+                    } catch (Exception ignored) {}
+
                     list.add(new StorageDevice(
-                            root.getAbsolutePath(),
+                            rawDevicePath,
                             systemName,
-                            "VOL-" + root.getAbsolutePath().charAt(0),
+                            "VOL-" + rootPath.charAt(0),
                             total,
-                            4096,
-                            "Logical Partition",
+                            512,
+                            fsType,
                             isSys
                     ));
                 }
@@ -82,16 +106,13 @@ public class StorageDetector {
 
     private static void parsePowerShellDiskOutput(String json, List<StorageDevice> list) {
         try {
-            // Simplified JSON object/array parser for PowerShell Get-Disk output
             if (json.startsWith("[")) {
-                // Array of disks
                 String[] items = json.split("\\},\\s*\\{");
                 for (String item : items) {
                     StorageDevice dev = parseDiskJsonItem(item);
                     if (dev != null) list.add(dev);
                 }
             } else if (json.startsWith("{")) {
-                // Single disk
                 StorageDevice dev = parseDiskJsonItem(json);
                 if (dev != null) list.add(dev);
             }
@@ -103,8 +124,8 @@ public class StorageDetector {
     private static StorageDevice parseDiskJsonItem(String json) {
         try {
             int number = extractJsonInt(json, "Number", 0);
-            String name = extractJsonString(json, "FriendlyName", "Generic Storage");
-            String serial = extractJsonString(json, "SerialNumber", "SN-UNKNOWN");
+            String name = extractJsonString(json, "FriendlyName", "Physical Disk");
+            String serial = extractJsonString(json, "SerialNumber", "SN-PHYSICAL-" + number);
             long size = extractJsonLong(json, "Size", 0L);
             int sectorSize = extractJsonInt(json, "SectorSize", 512);
             String bus = extractJsonString(json, "BusType", "SATA/USB");
@@ -152,19 +173,36 @@ public class StorageDetector {
         int idx = json.indexOf(search);
         if (idx == -1) return false;
         int start = json.indexOf(":", idx) + 1;
-        String sub = json.substring(start, Math.min(start + 20, json.length())).toLowerCase();
-        return sub.contains("true");
+        int end = json.indexOf(",", start);
+        if (end == -1) end = json.indexOf("}", start);
+        if (end == -1) return false;
+        String val = json.substring(start, end).trim();
+        return Boolean.parseBoolean(val);
     }
 
     private static List<StorageDevice> detectLinuxDrives() {
         List<StorageDevice> list = new ArrayList<>();
         try {
-            File procPart = new File("/proc/partitions");
-            if (procPart.exists()) {
-                // Return root device fallback for Linux
-                list.add(new StorageDevice("/dev/sdb", "Linux Storage Device", "LNX-001", 16000000000L, 512, "USB/SATA", false));
+            File devDir = new File("/dev");
+            if (devDir.exists() && devDir.isDirectory()) {
+                File[] files = devDir.listFiles((dir, name) -> name.matches("^(sd[a-z]|nvme[0-9]+n[0-9]+)$"));
+                if (files != null) {
+                    for (File f : files) {
+                        list.add(new StorageDevice(
+                                f.getAbsolutePath(),
+                                "Linux Block Storage (" + f.getName() + ")",
+                                "DEV-" + f.getName(),
+                                f.length(),
+                                512,
+                                "Direct Block IO",
+                                f.getName().equals("sda")
+                        ));
+                    }
+                }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            System.err.println("Error detecting Linux drives: " + e.getMessage());
+        }
         return list;
     }
 }
