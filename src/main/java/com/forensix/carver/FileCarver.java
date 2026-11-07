@@ -111,9 +111,17 @@ public class FileCarver {
                     }
                 }
 
+                if (totalBytes != Long.MAX_VALUE && currentPosition + bytesRead >= totalBytes) {
+                    reachedEof = true;
+                    break;
+                }
+
                 long nextPos = currentPosition + bytesRead - 4096;
-                currentPosition = (nextPos / sectorSize) * sectorSize;
-                if (currentPosition <= 0) currentPosition = 0;
+                long advancedPos = (nextPos / sectorSize) * sectorSize;
+                if (advancedPos <= currentPosition) {
+                    break;
+                }
+                currentPosition = advancedPos;
 
                 if (listener != null) {
                     listener.onProgress(currentPosition, totalBytes, fileCount);
