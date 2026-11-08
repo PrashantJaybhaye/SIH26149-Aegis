@@ -10,11 +10,14 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.*;
+import javafx.scene.SnapshotParameters;
+import javafx.scene.image.Image;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.Stop;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.FillRule;
 
 /**
  * High-fidelity vector graphics and UI component builders replicating the Disk Drill design system.
@@ -160,49 +163,43 @@ public class DiskDrillComponents {
         return btn;
     }
 
+    // Exact SVG path definitions from app-icon.svg
+    public static final String APP_ICON_PATH_1 = "M 290.1 32.8 L 217.2 105.6 L 290.1 105.6 Z";
+    public static final String APP_ICON_PATH_2 = "M 485.4 195.6 L 476.1 190.9 L 380.0 190.9 L 361.4 158.4 L 344.4 139.8 L 333.5 132.0 L 308.7 121.2 L 206.4 119.6 L 203.3 116.5 L 203.3 29.7 L 76.2 159.9 L 59.2 183.2 L 46.8 208.0 L 35.9 251.4 L 34.4 296.3 L 178.5 156.8 L 180.0 158.4 L 178.5 183.2 L 104.1 256.0 L 79.3 294.8 L 65.4 339.7 L 63.8 403.2 L 274.6 198.6 L 294.8 189.4 L 356.8 189.4 L 363.0 192.5 L 367.6 200.2 L 366.0 243.6 L 363.0 245.2 L 322.7 208.0 L 311.8 203.3 L 301.0 203.3 L 282.4 215.7 L 166.1 330.4 L 149.0 353.7 L 136.6 376.9 L 125.8 406.4 L 121.2 428.0 L 119.6 485.4 L 239.0 370.7 L 327.3 370.7 L 333.5 375.4 L 336.6 381.6 L 336.6 386.2 L 328.8 400.2 L 381.6 398.6 L 392.4 392.4 L 400.2 383.1 L 443.6 301.0 L 404.8 313.4 L 299.4 311.8 L 339.7 273.0 L 358.3 265.3 L 420.3 265.3 L 431.2 274.6 L 445.1 297.8 L 488.5 209.5 L 488.5 201.8 Z";
+
     /**
-     * Renders Apple-Grade Forensix Squircle Emblem and Typography.
+     * Renders Apple-Grade AEGIS Brand Emblem and Typography using app-icon.svg.
+     * Features a 100% transparent background with only the vector icon visible.
      */
     public static Node createBrandLogo() {
         HBox container = new HBox(8);
         container.setAlignment(Pos.CENTER_LEFT);
 
-        // Apple Continuous Curvature Squircle Icon (28x28)
-        Canvas logoCanvas = new Canvas(28, 28);
+        // Vector App Icon without any background (100% transparent)
+        Canvas logoCanvas = new Canvas(24, 24);
         GraphicsContext gc = logoCanvas.getGraphicsContext2D();
 
-        // 1. Apple Royal Sapphire Gradient
-        LinearGradient bgGrad = new LinearGradient(0, 0, 0, 28, false, CycleMethod.NO_CYCLE,
-                new Stop(0.0, Color.web("#007aff")),
-                new Stop(1.0, Color.web("#0062cc")));
-        gc.setFill(bgGrad);
-        gc.fillRoundRect(0, 0, 28, 28, 7, 7);
-
-        // Subtle inner rim light
-        gc.setStroke(Color.color(1, 1, 1, 0.3));
-        gc.setLineWidth(0.8);
-        gc.strokeRoundRect(0.4, 0.4, 27.2, 27.2, 7, 7);
-
-        // 2. High-precision laser disk platter ring
-        gc.setStroke(Color.web("#ffffff", 0.95));
-        gc.setLineWidth(1.8);
-        gc.strokeOval(6.5, 6.5, 15, 15);
-
-        // 3. Central spindle hub
-        gc.setFill(Color.WHITE);
-        gc.fillOval(11.5, 11.5, 5, 5);
-
-        // 4. Cyan forensic optical read node
-        gc.setFill(Color.web("#38bdf8"));
-        gc.fillOval(18.5, 7.5, 3.2, 3.2);
+        // High-precision vector emblem from app-icon.svg rendered directly on transparent canvas
+        double iconTargetSize = 22.0;
+        double scale = iconTargetSize / 512.0;
+        gc.save();
+        gc.translate(1.0, 1.0);
+        gc.scale(scale, scale);
+        gc.setFill(Color.web("#0071e3")); // Apple Royal Blue
+        gc.setFillRule(FillRule.EVEN_ODD);
+        gc.beginPath();
+        gc.appendSVGPath(APP_ICON_PATH_1);
+        gc.appendSVGPath(APP_ICON_PATH_2);
+        gc.fill();
+        gc.restore();
 
         // Typography: Apple SF Pro styling
         HBox textAndBadge = new HBox(6);
         textAndBadge.setAlignment(Pos.CENTER_LEFT);
 
-        Label brand = new Label("Forensix");
+        Label brand = new Label("AEGIS");
         brand.setStyle("-fx-font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif; " +
-                "-fx-font-size: 13.5px; -fx-font-weight: 600; -fx-text-fill: #1d1d1f; -fx-letter-spacing: -0.2px;");
+                "-fx-font-size: 13.5px; -fx-font-weight: 700; -fx-text-fill: #1d1d1f; -fx-letter-spacing: 0.5px;");
 
         Label badge = new Label("PRO");
         badge.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; " +
@@ -212,6 +209,44 @@ public class DiskDrillComponents {
         textAndBadge.getChildren().addAll(brand, badge);
         container.getChildren().addAll(logoCanvas, textAndBadge);
         return container;
+    }
+
+    /**
+     * Generates a high-DPI rasterized Application Icon from app-icon.svg for Stage & Windows Taskbar.
+     */
+    public static Image createAppIconImage(int size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+
+        double radius = size * 0.23;
+        LinearGradient bgGrad = new LinearGradient(0, 0, 0, size, false, CycleMethod.NO_CYCLE,
+                new Stop(0.0, Color.web("#007aff")),
+                new Stop(1.0, Color.web("#0051ba")));
+        gc.setFill(bgGrad);
+        gc.fillRoundRect(0, 0, size, size, radius, radius);
+
+        gc.setStroke(Color.color(1, 1, 1, 0.35));
+        gc.setLineWidth(Math.max(1.0, size * 0.03));
+        gc.strokeRoundRect(0.5, 0.5, size - 1.0, size - 1.0, radius, radius);
+
+        double emblemSize = size * 0.62;
+        double offset = (size - emblemSize) / 2.0;
+        double scale = emblemSize / 512.0;
+
+        gc.save();
+        gc.translate(offset, offset);
+        gc.scale(scale, scale);
+        gc.setFill(Color.WHITE);
+        gc.setFillRule(FillRule.EVEN_ODD);
+        gc.beginPath();
+        gc.appendSVGPath(APP_ICON_PATH_1);
+        gc.appendSVGPath(APP_ICON_PATH_2);
+        gc.fill();
+        gc.restore();
+
+        SnapshotParameters sp = new SnapshotParameters();
+        sp.setFill(Color.TRANSPARENT);
+        return c.snapshot(sp, null);
     }
 
     // =========================================================================
@@ -283,10 +318,87 @@ public class DiskDrillComponents {
     /**
      * Subtle outline shield header matching Disk Drill reference (drive detail page.png).
      */
+    /**
+     * Header shield with checkmark in Disk Drill green (#16a34a / #22c55e).
+     */
     public static Node createDiskDrillHeaderShield(double size) {
         Canvas c = new Canvas(size, size);
         GraphicsContext gc = c.getGraphicsContext2D();
-        gc.setStroke(Color.web("#64748b"));
+        gc.setStroke(Color.web("#16a34a"));
+        gc.setLineWidth(1.3);
+        gc.beginPath();
+        gc.moveTo(size * 0.5, 1.2);
+        gc.lineTo(size - 2.0, 3.2);
+        gc.lineTo(size - 2.0, size * 0.55);
+        gc.quadraticCurveTo(size - 2.0, size - 1.5, size * 0.5, size - 0.8);
+        gc.quadraticCurveTo(2.0, size - 1.5, 2.0, size * 0.55);
+        gc.lineTo(2.0, 3.2);
+        gc.closePath();
+        gc.stroke();
+
+        // Inner green checkmark
+        gc.setStroke(Color.web("#16a34a"));
+        gc.setLineWidth(1.2);
+        gc.strokeLine(size * 0.30, size * 0.52, size * 0.44, size * 0.68);
+        gc.strokeLine(size * 0.44, size * 0.68, size * 0.72, size * 0.36);
+        return c;
+    }
+
+    /**
+     * Sleek green status dot for online physical hardware disks.
+     */
+    public static Node createDiskDrillPhysicalStatusDot(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        double dotSize = Math.max(5.5, size * 0.45);
+        double offset = (size - dotSize) / 2.0;
+        gc.setFill(Color.web("#22c55e"));
+        gc.fillOval(offset, offset, dotSize, dotSize);
+        return c;
+    }
+
+    /**
+     * System lock badge for protected OS drive (C:).
+     */
+    public static Node createDiskDrillSystemLockBadge(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setFill(Color.web("#e2e8f0"));
+        gc.fillOval(1.0, 1.0, size - 2.0, size - 2.0);
+
+        // Lock shackle
+        gc.setStroke(Color.web("#475569"));
+        gc.setLineWidth(1.3);
+        gc.strokeArc(size * 0.32, size * 0.22, size * 0.36, size * 0.32, 0, 180, javafx.scene.shape.ArcType.OPEN);
+
+        // Lock body
+        gc.setFill(Color.web("#475569"));
+        gc.fillRoundRect(size * 0.26, size * 0.44, size * 0.48, size * 0.36, 1.5, 1.5);
+        return c;
+    }
+
+    /**
+     * Solid green circle with white checkmark for active system partition / protected volume.
+     */
+    public static Node createDiskDrillActiveBadge(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setFill(Color.web("#16a34a"));
+        gc.fillOval(1.0, 1.0, size - 2.0, size - 2.0);
+        gc.setStroke(Color.WHITE);
+        gc.setLineWidth(1.3);
+        gc.strokeLine(size * 0.28, size * 0.52, size * 0.44, size * 0.68);
+        gc.strokeLine(size * 0.44, size * 0.68, size * 0.72, size * 0.34);
+        return c;
+    }
+
+    /**
+     * Green outline shield with checkmark for verified data volumes (C:, D:, E:).
+     */
+    public static Node createDiskDrillVaultBadge(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setStroke(Color.web("#16a34a"));
         gc.setLineWidth(1.1);
         gc.beginPath();
         gc.moveTo(size * 0.5, 1.2);
@@ -297,46 +409,11 @@ public class DiskDrillComponents {
         gc.lineTo(2.0, 3.0);
         gc.closePath();
         gc.stroke();
-        return c;
-    }
-
-    /**
-     * Solid green circle with white checkmark for active system partition (Local Disk C:).
-     */
-    public static Node createDiskDrillActiveBadge(double size) {
-        Canvas c = new Canvas(size, size);
-        GraphicsContext gc = c.getGraphicsContext2D();
-        gc.setFill(Color.web("#10b981"));
-        gc.fillOval(1.0, 1.0, size - 2.0, size - 2.0);
-        gc.setStroke(Color.WHITE);
-        gc.setLineWidth(1.3);
-        gc.strokeLine(size * 0.28, size * 0.52, size * 0.44, size * 0.68);
-        gc.strokeLine(size * 0.44, size * 0.68, size * 0.72, size * 0.34);
-        return c;
-    }
-
-    /**
-     * Subtle gray outline shield with checkmark for data volumes (D:, E:).
-     */
-    public static Node createDiskDrillVaultBadge(double size) {
-        Canvas c = new Canvas(size, size);
-        GraphicsContext gc = c.getGraphicsContext2D();
-        gc.setStroke(Color.web("#94a3b8"));
-        gc.setLineWidth(1.0);
-        gc.beginPath();
-        gc.moveTo(size * 0.5, 1.2);
-        gc.lineTo(size - 2.0, 3.0);
-        gc.lineTo(size - 2.0, size * 0.55);
-        gc.quadraticCurveTo(size - 2.0, size - 1.5, size * 0.5, size - 0.8);
-        gc.quadraticCurveTo(2.0, size - 1.5, 2.0, size * 0.55);
-        gc.lineTo(2.0, 3.0);
-        gc.closePath();
-        gc.stroke();
         // Inner checkmark
-        gc.setStroke(Color.web("#94a3b8"));
-        gc.setLineWidth(1.0);
-        gc.strokeLine(size * 0.32, size * 0.52, size * 0.46, size * 0.65);
-        gc.strokeLine(size * 0.46, size * 0.65, size * 0.68, size * 0.38);
+        gc.setStroke(Color.web("#16a34a"));
+        gc.setLineWidth(1.1);
+        gc.strokeLine(size * 0.30, size * 0.52, size * 0.44, size * 0.68);
+        gc.strokeLine(size * 0.44, size * 0.68, size * 0.72, size * 0.36);
         return c;
     }
 
@@ -611,26 +688,28 @@ public class DiskDrillComponents {
      * Creates the vibrant Disk Drill category cards (Pictures, Videos, Audio, Documents, Archives, Other).
      */
     public static VBox createCategoryCard(String title, String countText, String iconSymbol, String startHex, String endHex) {
-        VBox card = new VBox(8);
-        card.setPrefSize(145, 118);
-        card.setPadding(new Insets(14, 16, 14, 16));
+        VBox card = new VBox(6);
+        card.setPrefHeight(84);
+        card.setMinHeight(76);
+        card.setMaxHeight(92);
+        card.setPadding(new Insets(10, 14, 10, 14));
         card.setAlignment(Pos.CENTER_LEFT);
 
         String baseStyle = String.format(
                 "-fx-background-color: linear-gradient(to bottom right, %s, %s); " +
-                "-fx-background-radius: 12px; " +
-                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.12), 8, 0, 0, 3); " +
+                "-fx-background-radius: 10px; " +
+                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.10), 6, 0, 0, 2); " +
                 "-fx-cursor: hand;",
                 startHex, endHex);
 
         card.setStyle(baseStyle);
 
         Label lblIcon = new Label(iconSymbol);
-        lblIcon.setStyle("-fx-font-size: 26px; -fx-text-fill: white;");
+        lblIcon.setStyle("-fx-font-size: 20px; -fx-text-fill: white;");
 
         VBox textBox = new VBox(2);
         Label lblTitle = new Label(title);
-        lblTitle.setStyle("-fx-font-size: 13.5px; -fx-font-weight: 800; -fx-text-fill: white;");
+        lblTitle.setStyle("-fx-font-size: 13px; -fx-font-weight: 800; -fx-text-fill: white;");
 
         Label lblCount = new Label(countText);
         lblCount.setStyle("-fx-font-size: 11px; -fx-text-fill: rgba(255, 255, 255, 0.9);");
@@ -638,7 +717,7 @@ public class DiskDrillComponents {
         textBox.getChildren().addAll(lblTitle, lblCount);
         card.getChildren().addAll(lblIcon, textBox);
 
-        card.setOnMouseEntered(e -> card.setStyle(baseStyle + " -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.22), 12, 0, 0, 5); -fx-translate-y: -2px;"));
+        card.setOnMouseEntered(e -> card.setStyle(baseStyle + " -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.20), 10, 0, 0, 4); -fx-translate-y: -2px;"));
         card.setOnMouseExited(e -> card.setStyle(baseStyle + " -fx-translate-y: 0px;"));
 
         return card;
@@ -648,46 +727,40 @@ public class DiskDrillComponents {
      * Creates the metallic grey partition cards for the "Woohoo! Lost partitions found..." section (home.png).
      */
     public static VBox createLostPartitionCard(String name, String fsType, String sizeText) {
-        VBox card = new VBox(6);
-        card.setPrefSize(185, 115);
-        card.setPadding(new Insets(12, 16, 12, 16));
+        VBox card = new VBox(4);
+        card.setPrefHeight(72);
+        card.setMinHeight(64);
+        card.setMaxHeight(80);
+        card.setPadding(new Insets(8, 14, 8, 14));
         card.setAlignment(Pos.CENTER_LEFT);
 
         String baseStyle = "-fx-background-color: linear-gradient(to bottom, #8a99ad, #64748b); " +
-                "-fx-background-radius: 12px; " +
-                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.12), 8, 0, 0, 3); " +
+                "-fx-background-radius: 10px; " +
+                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.10), 6, 0, 0, 2); " +
                 "-fx-cursor: hand;";
         card.setStyle(baseStyle);
 
         Label icon = new Label("🖴");
-        icon.setStyle("-fx-font-size: 22px; -fx-text-fill: white;");
+        icon.setStyle("-fx-font-size: 18px; -fx-text-fill: white;");
 
-        VBox text = new VBox(2);
+        VBox text = new VBox(1);
         Label lblName = new Label(name);
-        lblName.setStyle("-fx-font-size: 12.5px; -fx-font-weight: 800; -fx-text-fill: white;");
+        lblName.setStyle("-fx-font-size: 12px; -fx-font-weight: 800; -fx-text-fill: white;");
+
+        HBox metaRow = new HBox(8);
+        metaRow.setAlignment(Pos.CENTER_LEFT);
 
         Label lblFs = new Label(fsType);
-        lblFs.setStyle("-fx-font-size: 11px; -fx-text-fill: rgba(255,255,255,0.85);");
+        lblFs.setStyle("-fx-font-size: 10.5px; -fx-text-fill: rgba(255,255,255,0.85);");
 
         Label lblSize = new Label(sizeText);
-        lblSize.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: white;");
+        lblSize.setStyle("-fx-font-size: 10.5px; -fx-font-weight: bold; -fx-text-fill: white;");
 
-        text.getChildren().addAll(lblName, lblFs, lblSize);
+        metaRow.getChildren().addAll(lblFs, lblSize);
+        text.getChildren().addAll(lblName, metaRow);
+        card.getChildren().addAll(icon, text);
 
-        Region baselineBar = new Region();
-        baselineBar.setPrefHeight(2);
-        baselineBar.setMaxWidth(Double.MAX_VALUE);
-        baselineBar.setStyle("-fx-background-color: rgba(255, 255, 255, 0.45); -fx-background-radius: 2;");
-
-        card.getChildren().addAll(icon, text, baselineBar);
-
-        card.setOnMouseEntered(e -> card.setStyle(
-                "-fx-background-color: linear-gradient(to bottom, #94a3b8, #475569); " +
-                "-fx-background-radius: 12px; " +
-                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.22), 12, 0, 0, 5); " +
-                "-fx-translate-y: -2px; " +
-                "-fx-cursor: hand;"
-        ));
+        card.setOnMouseEntered(e -> card.setStyle(baseStyle + " -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.20), 10, 0, 0, 4); -fx-translate-y: -2px;"));
         card.setOnMouseExited(e -> card.setStyle(baseStyle + " -fx-translate-y: 0px;"));
 
         return card;
@@ -844,10 +917,16 @@ public class DiskDrillComponents {
 
             header.getChildren().addAll(title, legend, spacer, lblStatusDetail, lblThroughputBadge);
 
-            canvas = new Canvas(850, 180);
+            canvas = new Canvas(850, 120);
             widthProperty().addListener((obs, oldV, newV) -> {
                 if (newV != null && newV.doubleValue() > 100) {
                     canvas.setWidth(newV.doubleValue() - 32);
+                    render();
+                }
+            });
+            heightProperty().addListener((obs, oldV, newV) -> {
+                if (newV != null && newV.doubleValue() > 60) {
+                    canvas.setHeight(Math.max(90, Math.min(180, newV.doubleValue() - 42)));
                     render();
                 }
             });

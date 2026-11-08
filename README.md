@@ -1,4 +1,4 @@
-# Forensix: Integrated Secure Data Erasure & Advanced File Recovery Platform
+# AEGIS: Automated Erasure and Guarded Information Suite
 
 **Smart India Hackathon 2026 (SIH26149)**
 * **Organization:** National Technical Research Organisation (NTRO)
@@ -17,9 +17,9 @@ git rm -r --cached reports
 
 ## 📌 Executive Summary
 
-**Forensix** is a unified digital forensics and cybersecurity platform that integrates **Secure Hardware & Logical Data Sanitization** with **Advanced Forensic File Carving & Recovery**.
+**AEGIS** (**Automated Erasure and Guarded Information Suite**) is a unified digital forensics and cybersecurity platform that integrates **Secure Hardware & Logical Data Sanitization** with **Advanced Forensic File Carving & Recovery**.
 
-Existing tools force cybersecurity teams and law enforcement agencies to use separate, fragmented software for wiping (e.g., DBAN, Blancco) and recovery (e.g., Autopsy, Scalpel, PhotoRec). **Forensix** unifies both capabilities into a single environment built specifically for the **National Technical Research Organisation (NTRO)** under **SIH 2026 (SIH26149)**.
+Existing tools force cybersecurity teams and law enforcement agencies to use separate, fragmented software for wiping (e.g., DBAN, Blancco) and recovery (e.g., Autopsy, Scalpel, PhotoRec). **AEGIS** unifies both capabilities into a single environment built specifically for the **National Technical Research Organisation (NTRO)** under **SIH 2026 (SIH26149)**.
 
 ---
 
@@ -144,7 +144,7 @@ Open Command Prompt or PowerShell in the project directory:
 # 1. Clean and compile the source code
 mvn clean compile
 
-# 2. Launch the interactive Forensix platform
+# 2. Launch the interactive AEGIS platform
 mvn exec:java -Dexec.mainClass="com.forensix.Main"
 ```
 

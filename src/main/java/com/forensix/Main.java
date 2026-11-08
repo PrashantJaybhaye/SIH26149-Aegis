@@ -46,7 +46,7 @@ public class Main {
 
     public static void runCli() {
         System.out.println("=========================================================================================");
-        System.out.println("    FORENSIX: Integrated Secure Data Erasure & Advanced File Recovery Platform           ");
+        System.out.println("    AEGIS: Automated Erasure and Guarded Information Suite                          ");
         System.out.println("    National Technical Research Organisation (NTRO) - SIH26149 Prototype                   ");
         System.out.println("=========================================================================================");
 
@@ -91,7 +91,7 @@ public class Main {
                     }).start();
                     break;
                 case "7":
-                    System.out.println("Exiting Forensix Platform. Stay Secure!");
+                    System.out.println("Exiting AEGIS Platform. Stay Secure!");
                     return;
                 default:
                     System.out.println("Invalid choice. Please enter a number between 1 and 7.");

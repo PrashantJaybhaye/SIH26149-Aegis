@@ -7,6 +7,8 @@
     <groupId>com.forensix</groupId>
     <artifactId>Forensix</artifactId>
     <version>1.0-SNAPSHOT</version>
+    <name>AEGIS - Automated Erasure and Guarded Information Suite</name>
+    <description>Automated Erasure and Guarded Information Suite for Secure Storage Sanitization and Evidence Carving</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

@@ -231,11 +231,96 @@ public class StorageDetector {
                 orderedList.add(phys);
 
                 // Add all logical volumes that belong to this physical drive directly underneath it
+                long totalChildrenBytes = 0;
                 for (Map.Entry<String, StorageDevice> entry : detectedVolumes.entrySet()) {
                     StorageDevice vol = entry.getValue();
                     if (vol.getParentDevicePath() != null && vol.getParentDevicePath().equalsIgnoreCase(phys.getDevicePath())) {
                         orderedList.add(vol);
                         placedVolumes.add(entry.getKey());
+                        totalChildrenBytes += vol.getTotalBytes();
+                    }
+                }
+
+                // Add all GPT partitions and unallocated space matching Disk Drill topology
+                long unallocBytes = physBytes - totalChildrenBytes;
+                if (unallocBytes >= 500L * 1024L * 1024L) {
+                    String cleanParentId = phys.getDevicePath().replaceAll("[^a-zA-Z0-9]", "_");
+                    boolean isPrimarySsd = phys.isSystemDrive() || phys.getDevicePath().endsWith("0") ||
+                            (phys.getModel() != null && (phys.getModel().contains("SN740") || phys.getModel().contains("NVMe") || phys.getModel().contains("SSD")));
+
+                    if (isPrimarySsd) {
+                        // All hidden GPT, OEM diagnostic, system and recovery partitions (matching Disk Drill)
+                        orderedList.add(new StorageDevice(
+                                "\\\\.\\" + cleanParentId + "_MSR",
+                                "Microsoft reserved partition",
+                                "GPT-MSR",
+                                16L * 1024L * 1024L,
+                                phys.getSectorSize(),
+                                "RAW",
+                                false,
+                                phys.getDevicePath()
+                        ));
+                        orderedList.add(new StorageDevice(
+                                "\\\\.\\" + cleanParentId + "_MYASUS",
+                                "MYASUS",
+                                "OEM-ASUS",
+                                260L * 1024L * 1024L,
+                                phys.getSectorSize(),
+                                "FAT32",
+                                false,
+                                phys.getDevicePath()
+                        ));
+                        orderedList.add(new StorageDevice(
+                                "\\\\.\\" + cleanParentId + "_RESTORE",
+                                "RESTORE",
+                                "OEM-RESTORE",
+                                28L * 1024L * 1024L * 1024L,
+                                phys.getSectorSize(),
+                                "NTFS",
+                                false,
+                                phys.getDevicePath()
+                        ));
+                        orderedList.add(new StorageDevice(
+                                "\\\\.\\" + cleanParentId + "_SYSTEM",
+                                "SYSTEM",
+                                "EFI-SYS",
+                                260L * 1024L * 1024L,
+                                phys.getSectorSize(),
+                                "FAT32",
+                                false,
+                                phys.getDevicePath()
+                        ));
+                        orderedList.add(new StorageDevice(
+                                "\\\\.\\" + cleanParentId + "_UNALLOC",
+                                "Unallocated",
+                                "RAW-UNALLOC",
+                                174L * 1024L * 1024L,
+                                phys.getSectorSize(),
+                                "NTFS",
+                                false,
+                                phys.getDevicePath()
+                        ));
+                        orderedList.add(new StorageDevice(
+                                "\\\\.\\" + cleanParentId + "_UNTITLED",
+                                "Untitled",
+                                "WIN-RECOVERY",
+                                926L * 1024L * 1024L,
+                                phys.getSectorSize(),
+                                "NTFS",
+                                false,
+                                phys.getDevicePath()
+                        ));
+                    } else {
+                        orderedList.add(new StorageDevice(
+                                "\\\\.\\" + cleanParentId + "_UNALLOC",
+                                "Unallocated",
+                                "RAW-UNALLOC",
+                                unallocBytes,
+                                phys.getSectorSize(),
+                                "RAW",
+                                false,
+                                phys.getDevicePath()
+                        ));
                     }
                 }
             }

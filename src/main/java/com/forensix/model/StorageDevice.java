@@ -35,7 +35,7 @@ public class StorageDevice {
     public String getParentDevicePath() { return parentDevicePath; }
 
     public boolean isPhysical() {
-        return devicePath != null && devicePath.startsWith("\\\\.\\Physical");
+        return devicePath != null && devicePath.startsWith("\\\\.\\Physical") && parentDevicePath == null && !devicePath.contains("#");
     }
 
     public boolean isLogicalVolume() {
@@ -57,13 +57,7 @@ public class StorageDevice {
 
     @Override
     public String toString() {
-        String cleanModel = model != null ? model.replaceAll("\\s*\\([a-zA-Z]:\\)", "").trim() : "Storage Volume";
-        return String.format("%-6s  %-20s  |  %-10s  |  Bus: %-16s  |  Sector: %d B%s",
-                "[" + devicePath + "]",
-                cleanModel,
-                getFormattedSize(),
-                interfaceType,
-                sectorSize,
-                isSystemDrive ? "  [SYSTEM CRITICAL]" : "");
+        String cleanModel = model != null && !model.isEmpty() ? model : devicePath;
+        return cleanModel + " (" + getFormattedSize() + " • " + interfaceType + (isSystemDrive ? " - OS PROTECTED" : "") + ")";
     }
 }

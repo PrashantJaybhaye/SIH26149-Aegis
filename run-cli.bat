@@ -1,5 +1,5 @@
 @echo off
-title Forensix CLI - Data Recovery and Forensic Sanitizer
+title AEGIS CLI - Automated Erasure and Guarded Information Suite
 
 cd /d "%~dp0"
 
@@ -18,7 +18,7 @@ echo [OK] Running with Administrator Privileges (Raw Block IOCTL enabled).
 :start_app
 echo.
 echo =========================================================================
-echo    FORENSIX: Data Recovery and Deep Forensic Carver Platform (CLI)
+echo    AEGIS: Automated Erasure and Guarded Information Suite (CLI)
 echo =========================================================================
 echo.
 
@@ -49,7 +49,7 @@ if exist "C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2026.2.3\pl
 )
 
 :launch
-echo Starting Forensix CLI Console...
+echo Starting AEGIS CLI Console...
 call "%MVN_CMD%" compile exec:java -Dexec.mainClass="com.forensix.Main" -Dexec.args="--cli"
 if %errorLevel% neq 0 (
     echo.

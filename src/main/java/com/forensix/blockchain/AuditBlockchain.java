@@ -13,13 +13,14 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * Immutable Cryptographic Audit Ledger for Forensix (NTRO SIH26149).
+ * Immutable Cryptographic Audit Ledger for AEGIS (NTRO SIH26149).
  * Maintains a SHA-256 hash-chained block ledger for every sanitization and carving operation,
  * ensuring tamper-evident forensic chain of custody and court admissibility.
  */
 public class AuditBlockchain {
 
-    private static final String LEDGER_FILE_PATH = "reports/forensix_audit_blockchain.json";
+    private static final String LEDGER_FILE_PATH = "reports/aegis_audit_blockchain.json";
+    private static final String LEGACY_LEDGER_FILE_PATH = "reports/forensix_audit_blockchain.json";
     private static AuditBlockchain instance;
 
     private List<Block> chain;
@@ -108,6 +109,9 @@ public class AuditBlockchain {
 
     private void loadChainFromDisk() {
         File file = new File(LEDGER_FILE_PATH);
+        if (!file.exists() && new File(LEGACY_LEDGER_FILE_PATH).exists()) {
+            file = new File(LEGACY_LEDGER_FILE_PATH);
+        }
         if (file.exists() && file.length() > 0) {
             try {
                 this.chain = mapper.readValue(file, new TypeReference<List<Block>>() {});
@@ -123,9 +127,9 @@ public class AuditBlockchain {
     private void createGenesisBlock() {
         chain = new ArrayList<>();
         String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-        Block genesis = new Block(0, time, "GENESIS_INITIALIZATION", "Forensix Platform Root",
+        Block genesis = new Block(0, time, "GENESIS_INITIALIZATION", "AEGIS Platform Root",
                 "SHA-256 Chained Merkle Ledger", "0000000000000000000000000000000000000000000000000000000000000000",
-                "Forensix NTRO SIH26149 Genesis Block Initialized", "0000000000000000000000000000000000000000000000000000000000000000");
+                "AEGIS NTRO SIH26149 Genesis Block Initialized", "0000000000000000000000000000000000000000000000000000000000000000");
         chain.add(genesis);
         saveChainToDisk();
     }
