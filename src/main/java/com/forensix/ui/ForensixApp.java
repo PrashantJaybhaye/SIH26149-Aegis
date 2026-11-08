@@ -23,6 +23,8 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.CheckBoxTableCell;
 import javafx.scene.image.Image;
@@ -55,6 +57,9 @@ public class ForensixApp extends Application {
 
     private Stage primaryStage;
     private Button btnMaximize;
+    private boolean isCustomMaximized = false;
+    private double restoreX = 100, restoreY = 100, restoreW = 1100, restoreH = 700;
+    private Rectangle windowClip;
     private double dragOffsetX = 0;
     private double dragOffsetY = 0;
 
@@ -251,10 +256,21 @@ public class ForensixApp extends Application {
         double defaultWidth = Math.min(1240, Math.max(1060, screenW * 0.88));
         double defaultHeight = Math.min(740, Math.max(600, screenH * 0.85));
 
+        // Apple macOS curved window edges with dynamic clipping
+        windowClip = new Rectangle();
+        windowClip.setArcWidth(24);
+        windowClip.setArcHeight(24);
+        windowClip.widthProperty().bind(mainLayout.widthProperty());
+        windowClip.heightProperty().bind(mainLayout.heightProperty());
+        mainLayout.setClip(windowClip);
+        mainLayout.setStyle("-fx-background-color: #f7f8fa; -fx-font-family: 'Segoe UI', system-ui, sans-serif; " +
+                "-fx-border-color: rgba(0, 0, 0, 0.20); -fx-border-width: 1px; -fx-background-radius: 12; -fx-border-radius: 12;");
+
         Scene scene = new Scene(mainLayout, defaultWidth, defaultHeight);
+        scene.setFill(Color.TRANSPARENT);
         applyDiskDrillStyle(scene);
 
-        primaryStage.initStyle(StageStyle.UNDECORATED);
+        primaryStage.initStyle(StageStyle.TRANSPARENT);
         primaryStage.setMinWidth(960);
         primaryStage.setMinHeight(540);
         primaryStage.setWidth(defaultWidth);
@@ -262,20 +278,8 @@ public class ForensixApp extends Application {
         primaryStage.setScene(scene);
         primaryStage.centerOnScreen();
 
-        // Listen for maximize state changes to update button icon and window border
-        primaryStage.maximizedProperty().addListener((obs, oldVal, isMax) -> {
-            if (btnMaximize != null) {
-                btnMaximize.setText(isMax ? "\u274F" : "\u25A2");
-            }
-            if (isMax) {
-                mainLayout.setStyle("-fx-background-color: #f7f8fa; -fx-font-family: 'Segoe UI', system-ui, sans-serif; -fx-border-color: transparent; -fx-border-width: 0px;");
-            } else {
-                mainLayout.setStyle("-fx-background-color: #f7f8fa; -fx-font-family: 'Segoe UI', system-ui, sans-serif; -fx-border-color: #d1d5db; -fx-border-width: 1px;");
-            }
-        });
-
-        // Add edge-drag resizing support for undecorated stage
-        ResizeHelper.addResizeSupport(primaryStage, scene);
+        // Add edge-drag resizing support for transparent stage (respects custom maximized state)
+        ResizeHelper.addResizeSupport(primaryStage, scene, () -> isCustomMaximized);
 
         primaryStage.show();
 
@@ -283,6 +287,54 @@ public class ForensixApp extends Application {
         refreshStorageDevices();
         refreshReports();
         startDeviceHotplugWatcher();
+    }
+
+    private void toggleMaximize() {
+        if (primaryStage == null) return;
+
+        if (isCustomMaximized) {
+            // Restore window to normal floating macOS curved geometry
+            isCustomMaximized = false;
+            primaryStage.setX(restoreX);
+            primaryStage.setY(restoreY);
+            primaryStage.setWidth(restoreW);
+            primaryStage.setHeight(restoreH);
+            applyWindowState(false);
+        } else {
+            // Save restore bounds before maximizing
+            restoreX = primaryStage.getX();
+            restoreY = primaryStage.getY();
+            restoreW = primaryStage.getWidth();
+            restoreH = primaryStage.getHeight();
+
+            // Find current screen's visual bounds (EXCLUDES Windows taskbar!)
+            Screen targetScreen = Screen.getScreensForRectangle(restoreX, restoreY, restoreW, restoreH)
+                    .stream().findFirst().orElse(Screen.getPrimary());
+            Rectangle2D visualBounds = targetScreen.getVisualBounds();
+
+            isCustomMaximized = true;
+            primaryStage.setX(visualBounds.getMinX());
+            primaryStage.setY(visualBounds.getMinY());
+            primaryStage.setWidth(visualBounds.getWidth());
+            primaryStage.setHeight(visualBounds.getHeight());
+            applyWindowState(true);
+        }
+    }
+
+    private void applyWindowState(boolean isMax) {
+        if (windowClip != null) {
+            windowClip.setArcWidth(isMax ? 0 : 24);
+            windowClip.setArcHeight(isMax ? 0 : 24);
+        }
+        if (mainLayout != null) {
+            if (isMax) {
+                mainLayout.setStyle("-fx-background-color: #f7f8fa; -fx-font-family: 'Segoe UI', system-ui, sans-serif; " +
+                        "-fx-border-color: transparent; -fx-border-width: 0px; -fx-background-radius: 0; -fx-border-radius: 0;");
+            } else {
+                mainLayout.setStyle("-fx-background-color: #f7f8fa; -fx-font-family: 'Segoe UI', system-ui, sans-serif; " +
+                        "-fx-border-color: rgba(0, 0, 0, 0.20); -fx-border-width: 1px; -fx-background-radius: 12; -fx-border-radius: 12;");
+            }
+        }
     }
 
     // =========================================================================
@@ -303,19 +355,28 @@ public class ForensixApp extends Application {
             dragOffsetY = e.getSceneY();
         });
         bar.setOnMouseDragged(e -> {
-            if (primaryStage != null && !primaryStage.isMaximized()) {
-                primaryStage.setX(e.getScreenX() - dragOffsetX);
-                primaryStage.setY(e.getScreenY() - dragOffsetY);
+            if (primaryStage != null) {
+                if (isCustomMaximized) {
+                    double relX = e.getX() / bar.getWidth();
+                    toggleMaximize();
+                    primaryStage.setX(e.getScreenX() - (primaryStage.getWidth() * relX));
+                    primaryStage.setY(e.getScreenY() - 20);
+                    dragOffsetX = primaryStage.getWidth() * relX;
+                    dragOffsetY = 20;
+                } else {
+                    primaryStage.setX(e.getScreenX() - dragOffsetX);
+                    primaryStage.setY(e.getScreenY() - dragOffsetY);
+                }
             }
         });
         bar.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2 && primaryStage != null) {
-                primaryStage.setMaximized(!primaryStage.isMaximized());
+                toggleMaximize();
             }
         });
 
         // 1. Left: Authentic Apple macOS Traffic Lights (Close, Minimize, Zoom)
-        Node trafficLights = DiskDrillComponents.createAppleTrafficLights(primaryStage);
+        Node trafficLights = DiskDrillComponents.createAppleTrafficLights(primaryStage, this::toggleMaximize);
 
         // Apple Hairline Divider
         Region divider = new Region();
@@ -3021,11 +3082,11 @@ public class ForensixApp extends Application {
         private static boolean resizing = false;
         private static Cursor currentCursor = Cursor.DEFAULT;
 
-        public static void addResizeSupport(Stage stage, Scene scene) {
+        public static void addResizeSupport(Stage stage, Scene scene, java.util.function.BooleanSupplier isMaximizedSupplier) {
             final int BORDER = 6;
 
             scene.setOnMouseMoved(e -> {
-                if (stage.isMaximized()) {
+                if (isMaximizedSupplier.getAsBoolean() || stage.isMaximized()) {
                     if (currentCursor != Cursor.DEFAULT) {
                         currentCursor = Cursor.DEFAULT;
                         scene.setCursor(null);
@@ -3054,7 +3115,7 @@ public class ForensixApp extends Application {
             });
 
             scene.setOnMousePressed(e -> {
-                if (currentCursor != Cursor.DEFAULT && !stage.isMaximized()) {
+                if (currentCursor != Cursor.DEFAULT && !isMaximizedSupplier.getAsBoolean() && !stage.isMaximized()) {
                     resizing = true;
                     startX = e.getScreenX();
                     startY = e.getScreenY();
@@ -3069,7 +3130,7 @@ public class ForensixApp extends Application {
             });
 
             scene.setOnMouseDragged(e -> {
-                if (!resizing || stage.isMaximized()) return;
+                if (!resizing || isMaximizedSupplier.getAsBoolean() || stage.isMaximized()) return;
                 double dx = e.getScreenX() - startX;
                 double dy = e.getScreenY() - startY;
 

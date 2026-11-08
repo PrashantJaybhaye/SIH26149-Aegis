@@ -29,6 +29,10 @@ public class DiskDrillComponents {
      * Features retina-crisp vector drawings for ✕, −, + with high-contrast visibility and tooltips.
      */
     public static Node createAppleTrafficLights(javafx.stage.Stage stage) {
+        return createAppleTrafficLights(stage, null);
+    }
+
+    public static Node createAppleTrafficLights(javafx.stage.Stage stage, Runnable onMaximizeToggle) {
         HBox box = new HBox(8);
         box.setAlignment(Pos.CENTER_LEFT);
         box.setPadding(new Insets(0, 6, 0, 0));
@@ -50,7 +54,11 @@ public class DiskDrillComponents {
 
         // 3. Green Zoom/Maximize Button
         Node greenBtn = createVectorTrafficDot(dotSize, "ZOOM", "#27c93f", "#1aab29", "#003800", () -> {
-            if (stage != null) stage.setMaximized(!stage.isMaximized());
+            if (onMaximizeToggle != null) {
+                onMaximizeToggle.run();
+            } else if (stage != null) {
+                stage.setMaximized(!stage.isMaximized());
+            }
         });
         javafx.scene.control.Tooltip.install(greenBtn, new javafx.scene.control.Tooltip("Zoom / Maximize"));
 
