@@ -1,46 +1,56 @@
 @echo off
-setlocal enabledelayedexpansion
-title Forensix - Data Recovery & Forensic Sanitizer
-
-:: Auto-elevate to Administrator privileges if not already running as Admin
-net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [INFO] Requesting Administrator Privileges...
-    powershell -Command "Start-Process -FilePath '%~f0' -WorkingDirectory '%~dp0' -Verb RunAs"
-    exit /b
-)
+title Forensix - Data Recovery and Forensic Sanitizer
 
 cd /d "%~dp0"
 
+net session >nul 2>&1
+if %errorLevel% equ 0 goto :admin_ok
+
+echo [INFO] Requesting Administrator Privileges...
+powershell -NoProfile -Command "Start-Process '%~f0' -Verb RunAs" 2>nul
+if %errorLevel% equ 0 exit /b
+echo [NOTICE] Administrator elevation bypassed. Running in standard user mode...
+goto :start_app
+
+:admin_ok
+echo [OK] Running with Administrator Privileges (Raw Block IOCTL enabled).
+
+:start_app
+echo.
 echo =========================================================================
-echo    FORENSIX: Data Recovery & Deep Forensic Carver Platform
+echo    FORENSIX: Data Recovery and Deep Forensic Carver Platform
 echo =========================================================================
-echo [OK] Running with Administrator Privileges (Raw Block IOCTL enabled)
 echo.
 
-:: Detect and configure JDK (Prefer JDK 21 matching JavaFX 21, fallback to JDK 17)
-if exist "C:\Program Files\Java\jdk-21" (
+if exist "C:\Program Files\Java\jdk-21\bin\java.exe" (
     set "JAVA_HOME=C:\Program Files\Java\jdk-21"
-    set "PATH=C:\Program Files\Java\jdk-21\bin;!PATH!"
-) else if exist "C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot" (
-    set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot"
-    set "PATH=C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot\bin;!PATH!"
+) else (
+    if exist "C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot\bin\java.exe" (
+        set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot"
+    )
+)
+
+if defined JAVA_HOME (
+    set "PATH=%JAVA_HOME%\bin;%PATH%"
 )
 
 set "MVN_CMD=mvn"
 where mvn >nul 2>&1
-if %errorLevel% neq 0 (
-    if exist "C:\Program Files\JetBrains\IntelliJ IDEA 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd" (
-        set "MVN_CMD=C:\Program Files\JetBrains\IntelliJ IDEA 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd"
-    ) else (
-        if exist "C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd" (
-            set "MVN_CMD=C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd"
-        )
-    )
+if %errorLevel% equ 0 goto :launch
+
+if exist "C:\Program Files\JetBrains\IntelliJ IDEA 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd" (
+    set "MVN_CMD=C:\Program Files\JetBrains\IntelliJ IDEA 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd"
+    goto :launch
 )
 
+if exist "C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd" (
+    set "MVN_CMD=C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd"
+    goto :launch
+)
+
+:launch
 echo Starting Forensix Desktop Application (JavaFX GUI)...
-"%MVN_CMD%" exec:java
+call "%MVN_CMD%" compile exec:java
 if %errorLevel% neq 0 (
     echo.
     echo [ERROR] Application exited with code %errorLevel%.

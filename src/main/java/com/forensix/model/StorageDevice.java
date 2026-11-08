@@ -8,15 +8,21 @@ public class StorageDevice {
     private final int sectorSize;         // 512 or 4096 bytes
     private final String interfaceType;   // USB, NVMe, SATA
     private final boolean isSystemDrive;  // Safety lock flag
+    private final String parentDevicePath; // Parent physical drive path if logical volume (e.g. "\\.\PhysicalDrive0")
 
     public StorageDevice(String devicePath, String model, String serialNumber, long totalBytes, int sectorSize, String interfaceType, boolean isSystemDrive) {
+        this(devicePath, model, serialNumber, totalBytes, sectorSize, interfaceType, isSystemDrive, null);
+    }
+
+    public StorageDevice(String devicePath, String model, String serialNumber, long totalBytes, int sectorSize, String interfaceType, boolean isSystemDrive, String parentDevicePath) {
         this.devicePath = devicePath;
         this.model = model;
         this.serialNumber = serialNumber;
-        this.totalBytes = totalBytes;
         this.sectorSize = sectorSize > 0 ? sectorSize : 512;
+        this.totalBytes = totalBytes;
         this.interfaceType = interfaceType;
         this.isSystemDrive = isSystemDrive;
+        this.parentDevicePath = parentDevicePath;
     }
 
     public String getDevicePath() { return devicePath; }
@@ -26,6 +32,15 @@ public class StorageDevice {
     public int getSectorSize() { return sectorSize; }
     public String getInterfaceType() { return interfaceType; }
     public boolean isSystemDrive() { return isSystemDrive; }
+    public String getParentDevicePath() { return parentDevicePath; }
+
+    public boolean isPhysical() {
+        return devicePath != null && devicePath.startsWith("\\\\.\\Physical");
+    }
+
+    public boolean isLogicalVolume() {
+        return !isPhysical();
+    }
 
     public long getTotalSectors() {
         return totalBytes / sectorSize;

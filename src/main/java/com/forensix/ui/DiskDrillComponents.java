@@ -1,10 +1,13 @@
 package com.forensix.ui;
 
+import javafx.application.Platform;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
@@ -19,55 +22,549 @@ import javafx.scene.shape.Circle;
 public class DiskDrillComponents {
 
     /**
-     * Renders the Forensix Brand Logo (Modern vector shield + digital magnifying disk emblem + clean typography).
+     * Renders the authentic Apple macOS Traffic Lights (Close, Minimize, Zoom).
+     * Features retina-crisp vector drawings for ✕, −, + with high-contrast visibility and tooltips.
+     */
+    public static Node createAppleTrafficLights(javafx.stage.Stage stage) {
+        HBox box = new HBox(8);
+        box.setAlignment(Pos.CENTER_LEFT);
+        box.setPadding(new Insets(0, 6, 0, 0));
+
+        final double dotSize = 13.5;
+
+        // 1. Red Close Button
+        Node redBtn = createVectorTrafficDot(dotSize, "CLOSE", "#ff5f56", "#e0443e", "#4a0002", () -> {
+            Platform.exit();
+            System.exit(0);
+        });
+        javafx.scene.control.Tooltip.install(redBtn, new javafx.scene.control.Tooltip("Close Window"));
+
+        // 2. Yellow Minimize Button
+        Node yellowBtn = createVectorTrafficDot(dotSize, "MINIMIZE", "#ffbd2e", "#dea123", "#523600", () -> {
+            if (stage != null) stage.setIconified(true);
+        });
+        javafx.scene.control.Tooltip.install(yellowBtn, new javafx.scene.control.Tooltip("Minimize Window"));
+
+        // 3. Green Zoom/Maximize Button
+        Node greenBtn = createVectorTrafficDot(dotSize, "ZOOM", "#27c93f", "#1aab29", "#003800", () -> {
+            if (stage != null) stage.setMaximized(!stage.isMaximized());
+        });
+        javafx.scene.control.Tooltip.install(greenBtn, new javafx.scene.control.Tooltip("Zoom / Maximize"));
+
+        box.getChildren().addAll(redBtn, yellowBtn, greenBtn);
+        return box;
+    }
+
+    private static Node createVectorTrafficDot(double size, String type, String fillHex, String strokeHex, String glyphHex, Runnable onClick) {
+        Canvas canvas = new Canvas(size, size);
+        GraphicsContext gc = canvas.getGraphicsContext2D();
+
+        SimpleBooleanProperty isHovered = new SimpleBooleanProperty(false);
+
+        Runnable redraw = () -> {
+            gc.clearRect(0, 0, size, size);
+            double r = (size - 1.2) / 2.0;
+            double cx = size / 2.0;
+            double cy = size / 2.0;
+
+            // Dot circle
+            gc.setFill(Color.web(fillHex));
+            gc.fillOval(cx - r, cy - r, r * 2, r * 2);
+
+            // Subtle border
+            gc.setStroke(Color.web(strokeHex));
+            gc.setLineWidth(0.85);
+            gc.strokeOval(cx - r, cy - r, r * 2, r * 2);
+
+            // Crisp vector glyph: 55% opacity when idle, 100% on hover for crisp visibility
+            double opacity = isHovered.get() ? 1.0 : 0.55;
+            gc.setStroke(Color.web(glyphHex, opacity));
+            gc.setFill(Color.web(glyphHex, opacity));
+
+            switch (type) {
+                case "CLOSE":
+                    // Razor-sharp 45-degree cross
+                    gc.setLineWidth(1.35);
+                    double d = 2.8;
+                    gc.strokeLine(cx - d, cy - d, cx + d, cy + d);
+                    gc.strokeLine(cx + d, cy - d, cx - d, cy + d);
+                    break;
+                case "MINIMIZE":
+                    // Centered horizontal bar
+                    gc.setLineWidth(1.45);
+                    gc.strokeLine(cx - 3.2, cy, cx + 3.2, cy);
+                    break;
+                case "ZOOM":
+                    // Diagonal expand arrows / plus
+                    gc.setLineWidth(1.35);
+                    gc.strokeLine(cx - 2.8, cy, cx + 2.8, cy);
+                    gc.strokeLine(cx, cy - 2.8, cx, cy + 2.8);
+                    break;
+            }
+        };
+
+        redraw.run();
+
+        canvas.setCursor(javafx.scene.Cursor.HAND);
+        canvas.setOnMouseEntered(e -> {
+            isHovered.set(true);
+            redraw.run();
+        });
+        canvas.setOnMouseExited(e -> {
+            isHovered.set(false);
+            redraw.run();
+        });
+        canvas.setOnMouseClicked(e -> {
+            if (onClick != null) onClick.run();
+        });
+
+        return canvas;
+    }
+
+    /**
+     * Renders Apple SF Symbol 'sidebar.left' toggle button with subtle rounded hover styling.
+     */
+    public static Button createAppleSidebarToggle(Runnable onToggle) {
+        Button btn = new Button();
+        btn.setPrefSize(28, 28);
+        btn.setMinSize(28, 28);
+        btn.setMaxSize(28, 28);
+        btn.setCursor(javafx.scene.Cursor.HAND);
+
+        Canvas canvas = new Canvas(16, 14);
+        GraphicsContext gc = canvas.getGraphicsContext2D();
+
+        // Outer window frame
+        gc.setStroke(Color.web("#52525b"));
+        gc.setLineWidth(1.2);
+        gc.strokeRoundRect(0.6, 0.6, 14.8, 12.8, 3, 3);
+
+        // Sidebar column divider
+        gc.strokeLine(5.5, 0.6, 5.5, 13.4);
+
+        // Subtle sidebar panel tint
+        gc.setFill(Color.web("#71717a", 0.35));
+        gc.fillRoundRect(0.6, 0.6, 4.9, 12.8, 2, 2);
+
+        btn.setGraphic(canvas);
+        String normalStyle = "-fx-background-color: transparent; -fx-background-radius: 6px; -fx-padding: 0;";
+        String hoverStyle = "-fx-background-color: rgba(0,0,0,0.06); -fx-background-radius: 6px; -fx-padding: 0;";
+
+        btn.setStyle(normalStyle);
+        btn.setOnMouseEntered(e -> btn.setStyle(hoverStyle));
+        btn.setOnMouseExited(e -> btn.setStyle(normalStyle));
+        btn.setOnAction(e -> {
+            if (onToggle != null) onToggle.run();
+        });
+
+        return btn;
+    }
+
+    /**
+     * Renders Apple-Grade Forensix Squircle Emblem and Typography.
      */
     public static Node createBrandLogo() {
-        HBox container = new HBox(10);
+        HBox container = new HBox(8);
         container.setAlignment(Pos.CENTER_LEFT);
 
-        Canvas logoCanvas = new Canvas(34, 34);
+        // Apple Continuous Curvature Squircle Icon (28x28)
+        Canvas logoCanvas = new Canvas(28, 28);
         GraphicsContext gc = logoCanvas.getGraphicsContext2D();
 
-        // 1. Cyber-Forensic Shield Badge
-        LinearGradient shieldGrad = new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#0078d4")),
-                new Stop(1.0, Color.web("#0284c7")));
-        gc.setFill(shieldGrad);
-        gc.fillRoundRect(2, 2, 30, 30, 8, 8);
+        // 1. Apple Royal Sapphire Gradient
+        LinearGradient bgGrad = new LinearGradient(0, 0, 0, 28, false, CycleMethod.NO_CYCLE,
+                new Stop(0.0, Color.web("#007aff")),
+                new Stop(1.0, Color.web("#0062cc")));
+        gc.setFill(bgGrad);
+        gc.fillRoundRect(0, 0, 28, 28, 7, 7);
 
-        // Subtle shield outline
-        gc.setStroke(Color.color(1, 1, 1, 0.45));
-        gc.setLineWidth(1.2);
-        gc.strokeRoundRect(2, 2, 30, 30, 8, 8);
+        // Subtle inner rim light
+        gc.setStroke(Color.color(1, 1, 1, 0.3));
+        gc.setLineWidth(0.8);
+        gc.strokeRoundRect(0.4, 0.4, 27.2, 27.2, 7, 7);
 
-        // 2. Inner Hard Disk Platter Ring
-        gc.setStroke(Color.web("#e0f2fe"));
-        gc.setLineWidth(2.2);
-        gc.strokeOval(8, 8, 18, 18);
+        // 2. High-precision laser disk platter ring
+        gc.setStroke(Color.web("#ffffff", 0.95));
+        gc.setLineWidth(1.8);
+        gc.strokeOval(6.5, 6.5, 15, 15);
 
-        // 3. Central Platter Hub & Forensic Read Arm
+        // 3. Central spindle hub
         gc.setFill(Color.WHITE);
-        gc.fillOval(14, 14, 6, 6);
-        gc.setStroke(Color.WHITE);
-        gc.setLineWidth(2.0);
-        gc.strokeLine(17, 17, 23, 11);
+        gc.fillOval(11.5, 11.5, 5, 5);
 
-        // 4. Glowing Cyan Focus Node
+        // 4. Cyan forensic optical read node
         gc.setFill(Color.web("#38bdf8"));
-        gc.fillOval(22, 10, 3.5, 3.5);
+        gc.fillOval(18.5, 7.5, 3.2, 3.2);
 
-        VBox textBox = new VBox(1);
-        textBox.setAlignment(Pos.CENTER_LEFT);
+        // Typography: Apple SF Pro styling
+        HBox textAndBadge = new HBox(6);
+        textAndBadge.setAlignment(Pos.CENTER_LEFT);
 
-        Label brand = new Label("FORENSIX");
-        brand.setStyle("-fx-font-size: 15px; -fx-font-weight: 900; -fx-text-fill: #0f172a; -fx-letter-spacing: 0.8px;");
+        Label brand = new Label("Forensix");
+        brand.setStyle("-fx-font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif; " +
+                "-fx-font-size: 13.5px; -fx-font-weight: 600; -fx-text-fill: #1d1d1f; -fx-letter-spacing: -0.2px;");
 
-        Label tagline = new Label("DATA RECOVERY & FORENSICS");
-        tagline.setStyle("-fx-font-size: 8.5px; -fx-font-weight: 800; -fx-text-fill: #64748b; -fx-letter-spacing: 0.6px;");
+        Label badge = new Label("PRO");
+        badge.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; " +
+                "-fx-font-size: 9px; -fx-font-weight: 700; -fx-text-fill: #86868b; " +
+                "-fx-background-color: #f2f2f7; -fx-background-radius: 999px; -fx-padding: 1.5 6 1.5 6;");
 
-        textBox.getChildren().addAll(brand, tagline);
-        container.getChildren().addAll(logoCanvas, textBox);
+        textAndBadge.getChildren().addAll(brand, badge);
+        container.getChildren().addAll(logoCanvas, textAndBadge);
         return container;
+    }
+
+    // =========================================================================
+    // RETINA-CRISP APPLE & DISK DRILL VECTOR ICONS (ZERO BROKEN EMOJIS)
+    // =========================================================================
+
+    public static Node createVectorBookIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setStroke(Color.web("#52525b"));
+        gc.setLineWidth(1.4);
+        // Left page curve
+        gc.strokeArc(1.5, 2.5, size * 0.45, size * 0.7, 45, 120, javafx.scene.shape.ArcType.OPEN);
+        // Right page curve
+        gc.strokeArc(size * 0.5, 2.5, size * 0.45, size * 0.7, 15, 120, javafx.scene.shape.ArcType.OPEN);
+        // Spine
+        gc.strokeLine(size * 0.5, 3.5, size * 0.5, size - 2.5);
+        // Bottom spine curve
+        gc.strokeLine(1.5, size - 2.5, size * 0.5, size - 1.5);
+        gc.strokeLine(size * 0.5, size - 1.5, size - 1.5, size - 2.5);
+        return c;
+    }
+
+    public static Node createVectorLightningIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setFill(Color.web("#0071e3"));
+        double[] x = {size * 0.55, size * 0.2, size * 0.5, size * 0.4, size * 0.8, size * 0.45};
+        double[] y = {1, size * 0.55, size * 0.55, size - 1, size * 0.4, size * 0.4};
+        gc.fillPolygon(x, y, 6);
+        return c;
+    }
+
+    public static Node createVectorHardDriveIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        // Drive chassis
+        gc.setFill(Color.web("#f1f5f9"));
+        gc.fillRoundRect(1.5, 3, size - 3, size - 6, 3, 3);
+        gc.setStroke(Color.web("#475569"));
+        gc.setLineWidth(1.3);
+        gc.strokeRoundRect(1.5, 3, size - 3, size - 6, 3, 3);
+        // Drive slot line
+        gc.setStroke(Color.web("#94a3b8"));
+        gc.setLineWidth(1.0);
+        gc.strokeLine(4, size - 6, size - 4, size - 6);
+        // Glowing status LED
+        gc.setFill(Color.web("#0071e3"));
+        gc.fillOval(size - 6.5, 5, 2.8, 2.8);
+        return c;
+    }
+
+    public static Node createVectorMagnifierIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        // Glass lens
+        gc.setStroke(Color.web("#0071e3"));
+        gc.setLineWidth(1.6);
+        gc.strokeOval(2, 2, size * 0.58, size * 0.58);
+        gc.setFill(Color.web("#e0f2fe", 0.6));
+        gc.fillOval(2.8, 2.8, size * 0.58 - 1.6, size * 0.58 - 1.6);
+        // Handle
+        gc.setStroke(Color.web("#475569"));
+        gc.setLineWidth(2.2);
+        gc.strokeLine(size * 0.58, size * 0.58, size - 2, size - 2);
+        return c;
+    }
+
+    /**
+     * Subtle outline shield header matching Disk Drill reference (drive detail page.png).
+     */
+    public static Node createDiskDrillHeaderShield(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setStroke(Color.web("#64748b"));
+        gc.setLineWidth(1.1);
+        gc.beginPath();
+        gc.moveTo(size * 0.5, 1.2);
+        gc.lineTo(size - 2.0, 3.0);
+        gc.lineTo(size - 2.0, size * 0.55);
+        gc.quadraticCurveTo(size - 2.0, size - 1.5, size * 0.5, size - 0.8);
+        gc.quadraticCurveTo(2.0, size - 1.5, 2.0, size * 0.55);
+        gc.lineTo(2.0, 3.0);
+        gc.closePath();
+        gc.stroke();
+        return c;
+    }
+
+    /**
+     * Solid green circle with white checkmark for active system partition (Local Disk C:).
+     */
+    public static Node createDiskDrillActiveBadge(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setFill(Color.web("#10b981"));
+        gc.fillOval(1.0, 1.0, size - 2.0, size - 2.0);
+        gc.setStroke(Color.WHITE);
+        gc.setLineWidth(1.3);
+        gc.strokeLine(size * 0.28, size * 0.52, size * 0.44, size * 0.68);
+        gc.strokeLine(size * 0.44, size * 0.68, size * 0.72, size * 0.34);
+        return c;
+    }
+
+    /**
+     * Subtle gray outline shield with checkmark for data volumes (D:, E:).
+     */
+    public static Node createDiskDrillVaultBadge(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setStroke(Color.web("#94a3b8"));
+        gc.setLineWidth(1.0);
+        gc.beginPath();
+        gc.moveTo(size * 0.5, 1.2);
+        gc.lineTo(size - 2.0, 3.0);
+        gc.lineTo(size - 2.0, size * 0.55);
+        gc.quadraticCurveTo(size - 2.0, size - 1.5, size * 0.5, size - 0.8);
+        gc.quadraticCurveTo(2.0, size - 1.5, 2.0, size * 0.55);
+        gc.lineTo(2.0, 3.0);
+        gc.closePath();
+        gc.stroke();
+        // Inner checkmark
+        gc.setStroke(Color.web("#94a3b8"));
+        gc.setLineWidth(1.0);
+        gc.strokeLine(size * 0.32, size * 0.52, size * 0.46, size * 0.65);
+        gc.strokeLine(size * 0.46, size * 0.65, size * 0.68, size * 0.38);
+        return c;
+    }
+
+    public static Node createVectorShieldIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        // Shield path
+        gc.setFill(Color.web("#f0fdf4"));
+        gc.setStroke(Color.web("#16a34a"));
+        gc.setLineWidth(1.4);
+        gc.beginPath();
+        gc.moveTo(size * 0.5, 1.5);
+        gc.lineTo(size - 2.5, 3.5);
+        gc.lineTo(size - 2.5, size * 0.55);
+        gc.quadraticCurveTo(size - 2.5, size - 2, size * 0.5, size - 1);
+        gc.quadraticCurveTo(2.5, size - 2, 2.5, size * 0.55);
+        gc.lineTo(2.5, 3.5);
+        gc.closePath();
+        gc.fill();
+        gc.stroke();
+        // Inner checkmark
+        gc.setStroke(Color.web("#16a34a"));
+        gc.setLineWidth(1.4);
+        gc.strokeLine(size * 0.32, size * 0.48, size * 0.46, size * 0.63);
+        gc.strokeLine(size * 0.46, size * 0.63, size * 0.70, size * 0.35);
+        return c;
+    }
+
+    public static Node createVectorEraserIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        // Scissors / shredder vector
+        gc.setStroke(Color.web("#475569"));
+        gc.setLineWidth(1.4);
+        // Two scissor blade rings
+        gc.strokeOval(2, size - 6, 4.5, 4.5);
+        gc.strokeOval(size - 6.5, size - 6, 4.5, 4.5);
+        // Blades crossing
+        gc.strokeLine(5, size - 4, size - 3, 3);
+        gc.strokeLine(size - 5, size - 4, 3, 3);
+        return c;
+    }
+
+    public static Node createVectorCertificateIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        // Document page
+        gc.setFill(Color.web("#fffbeb"));
+        gc.fillRoundRect(2, 1.5, size - 4, size - 3, 2, 2);
+        gc.setStroke(Color.web("#d97706"));
+        gc.setLineWidth(1.2);
+        gc.strokeRoundRect(2, 1.5, size - 4, size - 3, 2, 2);
+        // Text lines
+        gc.setStroke(Color.web("#b45309"));
+        gc.setLineWidth(1.0);
+        gc.strokeLine(4.5, 5, size - 4.5, 5);
+        gc.strokeLine(4.5, 8, size - 4.5, 8);
+        gc.strokeLine(4.5, 11, size * 0.65, 11);
+        // Gold seal
+        gc.setFill(Color.web("#f59e0b"));
+        gc.fillOval(size - 6.5, size - 6.5, 4.5, 4.5);
+        return c;
+    }
+
+    public static Node createVectorBlockchainIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setStroke(Color.web("#0284c7"));
+        gc.setLineWidth(1.5);
+        // Left loop
+        gc.strokeRoundRect(1.5, 4.5, size * 0.45, size * 0.5, 3, 3);
+        // Right loop
+        gc.strokeRoundRect(size * 0.5, 4.5, size * 0.45, size * 0.5, 3, 3);
+        // Center connector
+        gc.setStroke(Color.web("#38bdf8"));
+        gc.strokeLine(size * 0.35, size * 0.5, size * 0.65, size * 0.5);
+        return c;
+    }
+
+    /**
+     * Renders the miniature hardware NVMe/SATA disk enclosure with green status LED for table rows (Disk Drill 1:1).
+     */
+    public static Node createVectorHardwareDiskRowIcon() {
+        Canvas c = new Canvas(24, 14);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        // Enclosure gradient
+        LinearGradient g = new LinearGradient(0, 0, 0, 14, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#475569")),
+                new Stop(1, Color.web("#1e293b")));
+        gc.setFill(g);
+        gc.fillRoundRect(0.5, 1.5, 23, 11, 2.5, 2.5);
+        // Metallic edge
+        gc.setStroke(Color.web("#64748b"));
+        gc.setLineWidth(0.7);
+        gc.strokeRoundRect(0.5, 1.5, 23, 11, 2.5, 2.5);
+        // Glowing green LED
+        gc.setFill(Color.web("#22c55e"));
+        gc.fillOval(3.5, 5, 4, 4);
+        gc.setFill(Color.color(0.13, 0.77, 0.36, 0.4));
+        gc.fillOval(2, 3.5, 7, 7);
+        return c;
+    }
+
+    /**
+     * Renders a crisp 4-tile Windows Blue system logo for Windows OS partitions (Disk Drill 1:1).
+     */
+    public static Node createVectorWindowsLogoIcon() {
+        Canvas c = new Canvas(15, 15);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setFill(Color.web("#0078d4"));
+        double gap = 1.8;
+        double s = 5.8;
+        gc.fillRect(0.8, 0.8, s, s);
+        gc.fillRect(0.8 + s + gap, 0.8, s, s);
+        gc.fillRect(0.8, 0.8 + s + gap, s, s);
+        gc.fillRect(0.8 + s + gap, 0.8 + s + gap, s, s);
+        return c;
+    }
+
+    /**
+     * Renders a crisp golden folder icon for data partitions.
+     */
+    public static Node createVectorFolderIcon(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        // Tab
+        gc.setFill(Color.web("#f59e0b"));
+        gc.fillRoundRect(1.5, 2, size * 0.45, 4, 1.5, 1.5);
+        // Folder body
+        gc.setFill(Color.web("#fbbf24"));
+        gc.fillRoundRect(1.5, 4.5, size - 3, size - 6, 2, 2);
+        gc.setStroke(Color.web("#d97706"));
+        gc.setLineWidth(0.8);
+        gc.strokeRoundRect(1.5, 4.5, size - 3, size - 6, 2, 2);
+        return c;
+    }
+
+    /**
+     * Renders the green circular check badge for Ready / Verified state (Disk Drill 1:1).
+     */
+    public static Node createVectorCheckBadge(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setFill(Color.web("#16a34a"));
+        gc.fillOval(0.5, 0.5, size - 1, size - 1);
+        gc.setStroke(Color.WHITE);
+        gc.setLineWidth(1.4);
+        gc.strokeLine(size * 0.28, size * 0.52, size * 0.44, size * 0.70);
+        gc.strokeLine(size * 0.44, size * 0.70, size * 0.74, size * 0.32);
+        return c;
+    }
+
+    /**
+     * Renders a security lock/shield badge for Protected System Drive.
+     */
+    public static Node createVectorLockBadge(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        gc.setFill(Color.web("#e2e8f0"));
+        gc.fillOval(0.5, 0.5, size - 1, size - 1);
+        // Shackle
+        gc.setStroke(Color.web("#475569"));
+        gc.setLineWidth(1.2);
+        gc.strokeArc(size * 0.3, size * 0.2, size * 0.4, size * 0.35, 0, 180, javafx.scene.shape.ArcType.OPEN);
+        // Body
+        gc.setFill(Color.web("#475569"));
+        gc.fillRoundRect(size * 0.25, size * 0.45, size * 0.5, size * 0.38, 1.5, 1.5);
+        return c;
+    }
+
+    public static Node createVectorCategoryIcon(String cat, double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+        switch (cat) {
+            case "PICTURES":
+                gc.setFill(Color.web("#0284c7"));
+                gc.fillRoundRect(1.5, 1.5, size - 3, size - 3, 2, 2);
+                gc.setFill(Color.web("#38bdf8"));
+                gc.fillOval(size * 0.65, size * 0.25, size * 0.2, size * 0.2);
+                gc.setFill(Color.WHITE);
+                double[] px = {1.5, size * 0.4, size * 0.65, size - 1.5, size - 1.5, 1.5};
+                double[] py = {size - 1.5, size * 0.55, size * 0.7, size * 0.45, size - 1.5, size - 1.5};
+                gc.fillPolygon(px, py, 6);
+                break;
+            case "VIDEOS":
+                gc.setFill(Color.web("#ea580c"));
+                gc.fillRoundRect(1.5, 1.5, size - 3, size - 3, 2, 2);
+                gc.setFill(Color.WHITE);
+                double[] vx = {size * 0.35, size * 0.35, size * 0.75};
+                double[] vy = {size * 0.25, size * 0.75, size * 0.5};
+                gc.fillPolygon(vx, vy, 3);
+                break;
+            case "AUDIO":
+                gc.setFill(Color.web("#0d9488"));
+                gc.fillRoundRect(1.5, 1.5, size - 3, size - 3, 2, 2);
+                gc.setFill(Color.WHITE);
+                gc.fillOval(size * 0.25, size * 0.6, size * 0.25, size * 0.25);
+                gc.fillOval(size * 0.6, size * 0.5, size * 0.25, size * 0.25);
+                gc.fillRect(size * 0.43, size * 0.25, 2, size * 0.45);
+                gc.fillRect(size * 0.78, size * 0.2, 2, size * 0.45);
+                gc.fillRect(size * 0.43, size * 0.2, size * 0.37, 2.5);
+                break;
+            case "DOCUMENTS":
+                gc.setFill(Color.web("#e11d48"));
+                gc.fillRoundRect(2, 1.5, size - 4, size - 3, 2, 2);
+                gc.setStroke(Color.WHITE);
+                gc.setLineWidth(1.2);
+                gc.strokeLine(4.5, size * 0.4, size - 4.5, size * 0.4);
+                gc.strokeLine(4.5, size * 0.6, size - 4.5, size * 0.6);
+                gc.strokeLine(4.5, size * 0.8, size * 0.65, size * 0.8);
+                break;
+            case "ARCHIVES":
+                gc.setFill(Color.web("#9333ea"));
+                gc.fillRoundRect(1.5, 1.5, size - 3, size - 3, 2, 2);
+                gc.setStroke(Color.WHITE);
+                gc.setLineWidth(1.2);
+                gc.strokeLine(size * 0.5, 1.5, size * 0.5, size - 1.5);
+                gc.setFill(Color.web("#fef08a"));
+                gc.fillRect(size * 0.35, size * 0.45, size * 0.3, size * 0.25);
+                break;
+            default:
+                gc.setFill(Color.web("#64748b"));
+                gc.fillOval(2, 2, size - 4, size - 4);
+                gc.setFill(Color.WHITE);
+                gc.fillOval(size * 0.35, size * 0.35, size * 0.3, size * 0.3);
+                break;
+        }
+        return c;
     }
 
     /**
