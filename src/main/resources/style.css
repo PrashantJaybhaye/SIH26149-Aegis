@@ -80,6 +80,14 @@
 .table-cell {
     -fx-border-color: transparent;
     -fx-alignment: CENTER_LEFT;
-    -fx-padding: 0 8;
+    -fx-padding: 0 10;
     -fx-text-fill: #1d1d1f;
+}
+
+/* Center alignment for status and protection badge column */
+.table-view .column-header.col-center,
+.table-view .column-header.col-center .label,
+.table-cell.col-center {
+    -fx-alignment: CENTER !important;
+    -fx-padding: 0 !important;
 }

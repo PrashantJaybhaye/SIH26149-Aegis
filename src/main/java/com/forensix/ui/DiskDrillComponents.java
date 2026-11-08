@@ -494,6 +494,80 @@ public class DiskDrillComponents {
     }
 
     /**
+     * Vector Apple SF Symbols style Chevron icon (expand / collapse).
+     * @param isDown true for chevron pointing down (expanded), false for chevron pointing right (collapsed)
+     * @param size icon bounding box size
+     */
+    public static Node createVectorChevron(boolean isDown, double size) {
+        return drawChevronCanvas(isDown, size, Color.web("#64748b"));
+    }
+
+    /**
+     * High-fidelity Apple / Disk Drill style vector chevron button for tree expansion in tables.
+     * Replaces clunky unicode triangles with a sleek, anti-aliased vector chevron.
+     */
+    public static Button createVectorChevronButton(boolean isDown, Runnable onToggle) {
+        Button btn = new Button();
+        btn.setFocusTraversable(false);
+        final double size = 12.0;
+
+        Node normalIcon = drawChevronCanvas(isDown, size, Color.web("#64748b"));
+        Node hoverIcon = drawChevronCanvas(isDown, size, Color.web("#0071e3"));
+
+        btn.setGraphic(normalIcon);
+        btn.setStyle("-fx-background-color: transparent; -fx-padding: 3 4; -fx-cursor: hand; -fx-background-radius: 4;");
+
+        btn.setOnMouseEntered(e -> {
+            btn.setGraphic(hoverIcon);
+            btn.setStyle("-fx-background-color: rgba(0, 113, 227, 0.10); -fx-padding: 3 4; -fx-cursor: hand; -fx-background-radius: 4;");
+        });
+        btn.setOnMouseExited(e -> {
+            btn.setGraphic(normalIcon);
+            btn.setStyle("-fx-background-color: transparent; -fx-padding: 3 4; -fx-cursor: hand; -fx-background-radius: 4;");
+        });
+
+        if (onToggle != null) {
+            btn.setOnAction(e -> {
+                e.consume();
+                onToggle.run();
+            });
+        }
+        return btn;
+    }
+
+    private static Canvas drawChevronCanvas(boolean isDown, double size, Color strokeColor) {
+        Canvas canvas = new Canvas(size, size);
+        GraphicsContext gc = canvas.getGraphicsContext2D();
+        gc.setStroke(strokeColor);
+        gc.setLineWidth(1.65);
+        gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        gc.setLineJoin(javafx.scene.shape.StrokeLineJoin.ROUND);
+
+        if (isDown) {
+            // Chevron Down: (3, 4.5) -> (6, 7.7) -> (9, 4.5)
+            double x1 = size * 0.25;
+            double y1 = size * 0.38;
+            double x2 = size * 0.50;
+            double y2 = size * 0.64;
+            double x3 = size * 0.75;
+            double y3 = size * 0.38;
+            gc.strokeLine(x1, y1, x2, y2);
+            gc.strokeLine(x2, y2, x3, y3);
+        } else {
+            // Chevron Right: (4.5, 3) -> (7.7, 6) -> (4.5, 9)
+            double x1 = size * 0.38;
+            double y1 = size * 0.25;
+            double x2 = size * 0.64;
+            double y2 = size * 0.50;
+            double x3 = size * 0.38;
+            double y3 = size * 0.75;
+            gc.strokeLine(x1, y1, x2, y2);
+            gc.strokeLine(x2, y2, x3, y3);
+        }
+        return canvas;
+    }
+
+    /**
      * Renders the miniature hardware NVMe/SATA disk enclosure with green status LED for table rows (Disk Drill 1:1).
      */
     public static Node createVectorHardwareDiskRowIcon() {

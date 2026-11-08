@@ -13,16 +13,35 @@ import java.util.concurrent.TimeUnit;
 public class StorageDetector {
 
     // Fast in-memory cache to make GUI tab switching and re-renders instantaneous
-    private static List<StorageDevice> cachedDevices = null;
-    private static long lastCacheTime = 0;
+    private static volatile List<StorageDevice> cachedDevices = null;
+    private static volatile long lastCacheTime = 0;
     private static final long CACHE_TTL_MS = 2500; // 2.5 seconds cache TTL
+
+    // Hardware physical drive cache - persists across plug/unplug events
+    private static final List<StorageDevice> cachedPhysicalDisks = new ArrayList<>();
+    private static final Map<String, String> cachedVolumeToParentMap = new HashMap<>();
+    private static volatile boolean isBackgroundEnriching = false;
+    private static Runnable onHardwareUpdatedCallback = null;
+
+    public static void setOnHardwareUpdated(Runnable callback) {
+        onHardwareUpdatedCallback = callback;
+    }
+
+    public static void invalidateCache() {
+        cachedDevices = null;
+        lastCacheTime = 0;
+    }
 
     /**
      * Enumerates physical storage devices and their nested partitions.
      */
     public static List<StorageDevice> detectDevices() {
+        return detectDevices(false);
+    }
+
+    public static List<StorageDevice> detectDevices(boolean force) {
         long now = System.currentTimeMillis();
-        if (cachedDevices != null && (now - lastCacheTime < CACHE_TTL_MS)) {
+        if (!force && cachedDevices != null && (now - lastCacheTime < CACHE_TTL_MS)) {
             return new ArrayList<>(cachedDevices);
         }
 
@@ -40,18 +59,38 @@ public class StorageDetector {
         return devices;
     }
 
-    /**
-     * Fast Windows storage detector:
-     * - Queries Physical Disks via PowerShell Get-Disk with a strict 2-second timeout
-     * - Queries Logical Volumes via native Java NIO FileStore in ~1ms (zero Swing COM lag)
-     * - Accurately nests child partitions directly underneath their respective parent hardware drives
-     */
-    private static List<StorageDevice> detectWindowsDrives() {
-        List<StorageDevice> physicalDisks = new ArrayList<>();
-        Map<String, String> volumeToParentMap = new HashMap<>(); // e.g. "C" -> "\\.\PhysicalDrive0"
+    private static void triggerBackgroundEnrichment() {
+        if (isBackgroundEnriching) return;
+        isBackgroundEnriching = true;
+        Thread t = new Thread(() -> {
+            try {
+                List<StorageDevice> freshDisks = new ArrayList<>();
+                Map<String, String> freshVolMap = new HashMap<>();
+                runPowerShellDiskQuery(freshDisks, freshVolMap, 5500);
 
+                if (!freshDisks.isEmpty()) {
+                    synchronized (cachedPhysicalDisks) {
+                        cachedPhysicalDisks.clear();
+                        cachedPhysicalDisks.addAll(freshDisks);
+                        cachedVolumeToParentMap.clear();
+                        cachedVolumeToParentMap.putAll(freshVolMap);
+                    }
+                    invalidateCache();
+                    if (onHardwareUpdatedCallback != null) {
+                        onHardwareUpdatedCallback.run();
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                isBackgroundEnriching = false;
+            }
+        }, "AEGIS-StorageEnricher");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static void runPowerShellDiskQuery(List<StorageDevice> physicalDisks, Map<String, String> volumeToParentMap, int timeoutMs) {
         try {
-            // Query physical disks and their partition drive letters in one concise command
             ProcessBuilder pb = new ProcessBuilder(
                     "powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
                     "$d = Get-Disk -ErrorAction SilentlyContinue | Select-Object Number, FriendlyName, SerialNumber, Size, SectorSize, BusType, IsSystem; " +
@@ -68,7 +107,7 @@ public class StorageDetector {
                 }
             }
 
-            boolean finished = process.waitFor(2200, TimeUnit.MILLISECONDS);
+            boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (!finished) {
                 process.destroyForcibly();
             } else {
@@ -77,8 +116,43 @@ public class StorageDetector {
                     parsePowerShellCombinedOutput(json, physicalDisks, volumeToParentMap);
                 }
             }
-        } catch (Exception e) {
-            // Non-critical fallback notice
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Fast Windows storage detector:
+     * - Instantaneous Native Java FileStore enumeration in < 1ms
+     * - Seamless hardware disk cache for instant plug/unplug reflection
+     * - Non-blocking background hardware enrichment
+     */
+    private static List<StorageDevice> detectWindowsDrives() {
+        List<StorageDevice> physicalDisks = new ArrayList<>();
+        Map<String, String> volumeToParentMap = new HashMap<>();
+
+        // Fast path: reuse cached physical disks for instant < 1ms response
+        boolean hasCachedPhysicalDisks;
+        synchronized (cachedPhysicalDisks) {
+            hasCachedPhysicalDisks = !cachedPhysicalDisks.isEmpty();
+            if (hasCachedPhysicalDisks) {
+                physicalDisks.addAll(cachedPhysicalDisks);
+                volumeToParentMap.putAll(cachedVolumeToParentMap);
+            }
+        }
+
+        if (!hasCachedPhysicalDisks) {
+            // Cold start: run fast PowerShell query with timeout
+            runPowerShellDiskQuery(physicalDisks, volumeToParentMap, 2200);
+            if (!physicalDisks.isEmpty()) {
+                synchronized (cachedPhysicalDisks) {
+                    cachedPhysicalDisks.clear();
+                    cachedPhysicalDisks.addAll(physicalDisks);
+                    cachedVolumeToParentMap.clear();
+                    cachedVolumeToParentMap.putAll(volumeToParentMap);
+                }
+            } else {
+                // If PowerShell timed out or was delayed, trigger background enrichment
+                triggerBackgroundEnrichment();
+            }
         }
 
         // Fast Native Java FileStore Enumeration (~1ms, zero Swing AWT COM blocking)
@@ -228,18 +302,27 @@ public class StorageDetector {
                     }
                 }
 
-                orderedList.add(phys);
-
-                // Add all logical volumes that belong to this physical drive directly underneath it
+                // Collect all child volumes that belong to this physical drive
+                List<StorageDevice> children = new ArrayList<>();
                 long totalChildrenBytes = 0;
                 for (Map.Entry<String, StorageDevice> entry : detectedVolumes.entrySet()) {
                     StorageDevice vol = entry.getValue();
                     if (vol.getParentDevicePath() != null && vol.getParentDevicePath().equalsIgnoreCase(phys.getDevicePath())) {
-                        orderedList.add(vol);
+                        children.add(vol);
                         placedVolumes.add(entry.getKey());
                         totalChildrenBytes += vol.getTotalBytes();
                     }
                 }
+
+                // If this is a removable USB drive and has NO active mounted volumes, it was unplugged!
+                boolean isUsb = "USB".equalsIgnoreCase(phys.getInterfaceType()) ||
+                        (phys.getModel() != null && phys.getModel().toUpperCase().contains("USB"));
+                if (isUsb && children.isEmpty()) {
+                    continue; // Skip unplugged USB hardware device!
+                }
+
+                orderedList.add(phys);
+                orderedList.addAll(children);
 
                 // Add all GPT partitions and unallocated space matching Disk Drill topology
                 long unallocBytes = physBytes - totalChildrenBytes;

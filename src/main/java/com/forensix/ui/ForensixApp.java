@@ -282,6 +282,7 @@ public class ForensixApp extends Application {
         log("[SYSTEM] AEGIS (Automated Erasure and Guarded Information Suite) initialized with Win32 IOCTL Direct Block Engine.");
         refreshStorageDevices();
         refreshReports();
+        startDeviceHotplugWatcher();
     }
 
     // =========================================================================
@@ -746,8 +747,8 @@ public class ForensixApp extends Application {
         });
 
         TableColumn<StorageDevice, StorageDevice> colName = new TableColumn<>("Device / Disk");
-        colName.setMinWidth(170);
-        colName.setPrefWidth(240);
+        colName.setMinWidth(220);
+        colName.setPrefWidth(340);
         colName.setSortable(false);
         colName.setCellValueFactory(d -> new javafx.beans.property.SimpleObjectProperty<>(d.getValue()));
         colName.setCellFactory(col -> new TableCell<>() {
@@ -758,47 +759,40 @@ public class ForensixApp extends Application {
                     setGraphic(null);
                     setText(null);
                 } else {
-                    HBox box = new HBox(6);
+                    HBox box = new HBox(8);
                     box.setAlignment(Pos.CENTER_LEFT);
 
                     boolean isPhysical = dev.isPhysical();
                     if (isPhysical) {
                         boolean isCollapsed = collapsedDisks.contains(dev.getDevicePath());
-                        Button chevronBtn = new Button(isCollapsed ? "\u25B8" : "\u25BE"); // ▸ or ▾
-                        chevronBtn.setFocusTraversable(false);
-                        chevronBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #475569; -fx-font-size: 11px; -fx-padding: 1 4; -fx-cursor: hand; -fx-font-weight: bold;");
-                        chevronBtn.setOnMouseEntered(e -> chevronBtn.setStyle("-fx-background-color: rgba(0, 113, 227, 0.15); -fx-text-fill: #0071e3; -fx-font-size: 11px; -fx-padding: 1 4; -fx-background-radius: 4; -fx-cursor: hand; -fx-font-weight: bold;"));
-                        chevronBtn.setOnMouseExited(e -> chevronBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #475569; -fx-font-size: 11px; -fx-padding: 1 4; -fx-cursor: hand; -fx-font-weight: bold;"));
-
                         final StorageDevice currentDev = dev;
-                        chevronBtn.setOnAction(e -> {
-                            e.consume();
+                        Button chevronBtn = DiskDrillComponents.createVectorChevronButton(!isCollapsed, () -> {
                             toggleDiskCollapse(currentDev);
                         });
 
                         Node diskIcon = DiskDrillComponents.createVectorHardwareDiskRowIcon();
                         String nameStr = (dev.getModel() != null && !dev.getModel().isEmpty()) ? dev.getModel() : dev.getDevicePath();
                         Label nameLabel = new Label(nameStr);
-                        nameLabel.setStyle("-fx-font-weight: 700; -fx-text-fill: #0f172a; -fx-font-size: 12.5px;");
+                        nameLabel.setStyle("-fx-font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif; -fx-font-weight: 700; -fx-text-fill: #0f172a; -fx-font-size: 13px;");
                         box.getChildren().addAll(chevronBtn, diskIcon, nameLabel);
                     } else {
+                        // Clean, modern visual indentation matching Disk Drill & Apple macOS (no ASCII tree symbols)
                         Region indent = new Region();
-                        indent.setMinWidth(18);
-                        indent.setPrefWidth(18);
-                        Label branch = new Label("\u2514\u2500"); // └──
-                        branch.setStyle("-fx-text-fill: #94a3b8; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11px;");
+                        indent.setMinWidth(28);
+                        indent.setPrefWidth(28);
+
                         String nameStr = (dev.getModel() != null && !dev.getModel().isEmpty()) ? dev.getModel() : dev.getDevicePath();
                         boolean isWindowsDrive = dev.isSystemDrive() || nameStr.toUpperCase().contains("C:");
                         boolean isLetteredVol = nameStr.matches(".*\\([A-Za-z]:\\).*") || dev.getDevicePath().matches("\\\\\\\\.\\\\[A-Za-z]:");
 
                         Node volIcon = isWindowsDrive
                                 ? DiskDrillComponents.createVectorWindowsLogoIcon()
-                                : (isLetteredVol ? DiskDrillComponents.createVectorFolderIcon(15) : DiskDrillComponents.createVectorHardDriveIcon(15));
+                                : (isLetteredVol ? DiskDrillComponents.createVectorFolderIcon(16) : DiskDrillComponents.createVectorHardDriveIcon(16));
                         Label nameLabel = new Label(nameStr);
                         nameLabel.setStyle(isLetteredVol
-                                ? "-fx-font-weight: 600; -fx-text-fill: #1e293b; -fx-font-size: 12.5px;"
-                                : "-fx-font-weight: 500; -fx-text-fill: #334155; -fx-font-size: 12px;");
-                        box.getChildren().addAll(indent, branch, volIcon, nameLabel);
+                                ? "-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-weight: 600; -fx-text-fill: #1e293b; -fx-font-size: 12.5px;"
+                                : "-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-weight: 500; -fx-text-fill: #475569; -fx-font-size: 12px;");
+                        box.getChildren().addAll(indent, volIcon, nameLabel);
                     }
                     setGraphic(box);
                     setText(null);
@@ -807,8 +801,8 @@ public class ForensixApp extends Application {
         });
 
         TableColumn<StorageDevice, String> colType = new TableColumn<>("Type");
-        colType.setMinWidth(80);
-        colType.setPrefWidth(95);
+        colType.setMinWidth(90);
+        colType.setPrefWidth(110);
         colType.setSortable(false);
         colType.setCellValueFactory(d -> {
             StorageDevice dev = d.getValue();
@@ -821,31 +815,43 @@ public class ForensixApp extends Application {
         });
 
         TableColumn<StorageDevice, String> colBus = new TableColumn<>("Connection / FS");
-        colBus.setMinWidth(75);
-        colBus.setPrefWidth(90);
+        colBus.setMinWidth(85);
+        colBus.setPrefWidth(105);
         colBus.setSortable(false);
         colBus.setCellValueFactory(d -> new SimpleStringProperty(d.getValue().getInterfaceType()));
 
         TableColumn<StorageDevice, String> colCapacity = new TableColumn<>("Capacity");
-        colCapacity.setMinWidth(65);
-        colCapacity.setPrefWidth(80);
+        colCapacity.setMinWidth(85);
+        colCapacity.setPrefWidth(100);
         colCapacity.setSortable(false);
         colCapacity.setCellValueFactory(d -> new SimpleStringProperty(d.getValue().getFormattedSize()));
 
-        // Disk Drill Protection Column (Subtle outline shield header, verified volume badges, blank for physical & hidden partitions)
+        // Disk Drill Protection Column (Subtle outline shield header, verified volume badges, perfectly centered)
         TableColumn<StorageDevice, StorageDevice> colProtection = new TableColumn<>();
-        Node headerShield = DiskDrillComponents.createDiskDrillHeaderShield(13);
-        colProtection.setGraphic(headerShield);
-        colProtection.setMinWidth(36);
-        colProtection.setMaxWidth(44);
-        colProtection.setPrefWidth(40);
+        Node headerShield = DiskDrillComponents.createDiskDrillHeaderShield(14);
+        StackPane headerBox = new StackPane(headerShield);
+        headerBox.setAlignment(Pos.CENTER);
+        headerBox.setMaxWidth(Double.MAX_VALUE);
+        colProtection.setGraphic(headerBox);
+        colProtection.setMinWidth(48);
+        colProtection.setMaxWidth(48);
+        colProtection.setPrefWidth(48);
         colProtection.setResizable(false);
         colProtection.setSortable(false);
+        colProtection.getStyleClass().add("col-center");
+        colProtection.setStyle("-fx-alignment: CENTER;");
         colProtection.setCellValueFactory(d -> new javafx.beans.property.SimpleObjectProperty<>(d.getValue()));
         colProtection.setCellFactory(col -> new TableCell<>() {
+            {
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                getStyleClass().add("col-center");
+                setStyle("-fx-alignment: CENTER; -fx-padding: 0;");
+            }
             @Override
             protected void updateItem(StorageDevice dev, boolean empty) {
                 super.updateItem(dev, empty);
+                setAlignment(Pos.CENTER);
                 if (empty || dev == null || dev.isPhysical()) {
                     setGraphic(null);
                     setText(null);
@@ -853,15 +859,14 @@ public class ForensixApp extends Application {
                     String name = dev.getModel() != null ? dev.getModel() : "";
                     boolean isLetteredVol = name.matches(".*\\([A-Za-z]:\\).*") || dev.getDevicePath().matches("\\\\\\\\.\\\\[A-Za-z]:");
                     if (isLetteredVol) {
-                        StackPane pane = new StackPane();
+                        Node badge = DiskDrillComponents.createDiskDrillVaultBadge(14);
+                        StackPane pane = new StackPane(badge);
                         pane.setAlignment(Pos.CENTER);
-                        Node badge = DiskDrillComponents.createDiskDrillVaultBadge(13);
+                        pane.setMaxWidth(Double.MAX_VALUE);
                         Tooltip.install(pane, new Tooltip("Protected Volume (Guaranteed Recovery Active)"));
-                        pane.getChildren().add(badge);
                         setGraphic(pane);
                         setText(null);
                     } else {
-                        // Hidden partition without drive letter (MSR, EFI, Recovery, OEM, Unallocated)
                         setGraphic(null);
                         setText(null);
                     }
@@ -882,7 +887,7 @@ public class ForensixApp extends Application {
         bottomTableToolbar.setAlignment(Pos.CENTER_LEFT);
         bottomTableToolbar.setPadding(new Insets(8, 0, 0, 0));
 
-        Label hintLabel = new Label("\uD83D\uDCA1 Click \u25BE on physical disks to collapse or expand partitions. Select any drive to inspect hardware details.");
+        Label hintLabel = new Label("\uD83D\uDCA1 Click the chevron icon on physical disks to collapse or expand partitions. Select any drive to inspect hardware details.");
         hintLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: #6b7280;");
 
         bottomTableToolbar.getChildren().add(hintLabel);
@@ -2827,33 +2832,95 @@ public class ForensixApp extends Application {
         return box;
     }
 
+    private Thread deviceHotplugWatcher;
+    private volatile boolean isWatcherActive = true;
+    private volatile boolean isRefreshingDevices = false;
+
+    private void startDeviceHotplugWatcher() {
+        // Register callback for asynchronous hardware enricher
+        StorageDetector.setOnHardwareUpdated(() -> {
+            Platform.runLater(() -> {
+                log("[AUTO-DETECT] Physical storage hardware details updated. Seamlessly syncing table...");
+                refreshStorageDevices(true);
+            });
+        });
+
+        deviceHotplugWatcher = new Thread(() -> {
+            String previousState = getDeviceFingerprint();
+            while (isWatcherActive) {
+                try {
+                    // Ultra-fast 250ms polling (< 0.01ms CPU time via Win32 logical drives)
+                    Thread.sleep(250);
+                    if (!isWatcherActive) break;
+
+                    String currentState = getDeviceFingerprint();
+                    if (!currentState.equals(previousState)) {
+                        previousState = currentState;
+                        StorageDetector.invalidateCache();
+                        Platform.runLater(() -> {
+                            log("[AUTO-DETECT] Storage media hardware change detected (drive inserted/removed). Instantly updating table...");
+                            refreshStorageDevices(true); // Smooth, non-disruptive update
+                        });
+                    }
+                } catch (InterruptedException e) {
+                    break;
+                } catch (Exception ignored) {}
+            }
+        }, "AEGIS-HotplugWatcher");
+        deviceHotplugWatcher.setDaemon(true);
+        deviceHotplugWatcher.start();
+    }
+
+    private String getDeviceFingerprint() {
+        StringBuilder sb = new StringBuilder();
+        File[] roots = File.listRoots();
+        if (roots != null) {
+            for (File r : roots) {
+                try {
+                    sb.append(r.getAbsolutePath()).append(':').append(r.canRead() ? r.getTotalSpace() : 0).append(';');
+                } catch (Exception ignored) {}
+            }
+        }
+        return sb.toString();
+    }
+
     private void refreshStorageDevices() {
-        if (drivesTable != null) {
-            drivesTable.setPlaceholder(createTableLoadingPlaceholder());
-        }
-        if (btnRefresh != null) {
-            btnRefresh.setDisable(true);
-            btnRefresh.setText(" Scanning...");
-            ProgressIndicator spinner = new ProgressIndicator();
-            spinner.setPrefSize(13, 13);
-            spinner.setMinSize(13, 13);
-            spinner.setMaxSize(13, 13);
-            btnRefresh.setGraphic(spinner);
-        }
-        if (tableItemCountLabel != null) {
-            tableItemCountLabel.setText("Scanning storage controllers & physical drives...");
-            tableItemCountLabel.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; " +
-                    "-fx-font-size: 12.5px; -fx-font-weight: 500; -fx-text-fill: #0071e3;");
+        refreshStorageDevices(false);
+    }
+
+    private void refreshStorageDevices(boolean isAuto) {
+        if (isRefreshingDevices) return;
+        isRefreshingDevices = true;
+
+        if (!isAuto) {
+            if (drivesTable != null && deviceList.isEmpty()) {
+                drivesTable.setPlaceholder(createTableLoadingPlaceholder());
+            }
+            if (btnRefresh != null) {
+                btnRefresh.setDisable(true);
+                btnRefresh.setText(" Scanning...");
+                ProgressIndicator spinner = new ProgressIndicator();
+                spinner.setPrefSize(13, 13);
+                spinner.setMinSize(13, 13);
+                spinner.setMaxSize(13, 13);
+                btnRefresh.setGraphic(spinner);
+            }
+            if (tableItemCountLabel != null && deviceList.isEmpty()) {
+                tableItemCountLabel.setText("Scanning storage controllers & physical drives...");
+                tableItemCountLabel.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; " +
+                        "-fx-font-size: 12.5px; -fx-font-weight: 500; -fx-text-fill: #0071e3;");
+            }
         }
 
         Task<List<StorageDevice>> task = new Task<>() {
             @Override
             protected List<StorageDevice> call() {
-                return StorageDetector.detectDevices();
+                return StorageDetector.detectDevices(isAuto);
             }
         };
 
         task.setOnSucceeded(e -> {
+            isRefreshingDevices = false;
             masterDeviceList.clear();
             if (task.getValue() != null) {
                 masterDeviceList.addAll(task.getValue());
@@ -2861,6 +2928,7 @@ public class ForensixApp extends Application {
             updateVisibleDeviceList();
             if (drivesTable != null) {
                 drivesTable.setPlaceholder(createTableEmptyPlaceholder());
+                drivesTable.refresh();
             }
             if (btnRefresh != null) {
                 btnRefresh.setDisable(false);
@@ -2868,10 +2936,11 @@ public class ForensixApp extends Application {
                 btnRefresh.setGraphic(null);
                 btnRefresh.setStyle("-fx-background-color: transparent; -fx-text-fill: #0071e3; -fx-font-size: 11.5px; -fx-font-weight: 600; -fx-cursor: hand; -fx-padding: 3 8; -fx-background-radius: 6;");
             }
-            log("[DEVICES] Refreshed storage media. Found " + masterDeviceList.size() + " active device(s).");
+            log("[DEVICES] Storage media updated. Found " + masterDeviceList.size() + " active device(s).");
         });
 
         task.setOnFailed(e -> {
+            isRefreshingDevices = false;
             if (drivesTable != null) {
                 drivesTable.setPlaceholder(createTableEmptyPlaceholder());
             }
@@ -2889,7 +2958,9 @@ public class ForensixApp extends Application {
             log("[ERROR] Storage device refresh failed: " + task.getException());
         });
 
-        new Thread(task).start();
+        Thread th = new Thread(task, "AEGIS-DeviceRefreshTask");
+        th.setDaemon(true);
+        th.start();
     }
 
     private void refreshReports() {
