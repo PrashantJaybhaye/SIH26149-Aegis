@@ -1,6 +1,5 @@
 package com.aegis.util;
 
-import java.util.Arrays;
 
 /**
  * Shannon Entropy Calculator for forensic storage analysis.

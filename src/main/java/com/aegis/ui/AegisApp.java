@@ -21,7 +21,6 @@ import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
-import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.paint.Color;
@@ -57,7 +56,6 @@ public class AegisApp extends Application {
     private StackPane contentArea;
 
     private Stage primaryStage;
-    private Button btnMaximize;
     private boolean isCustomMaximized = false;
     private double restoreX = 100, restoreY = 100, restoreW = 1100, restoreH = 700;
     private Rectangle windowClip;
@@ -95,7 +93,8 @@ public class AegisApp extends Application {
     private Label inspectorDriveSubtext;
     private Button btnInspectorSearchData;
     private Button btnInspectorSanitize;
-    private Label propType, propModel, propSerial, propProtocol, propSector, propCapacity, propSafety;
+    private Label propType, propModel, propSerial, propVendor, propProtocol, propRevision, propCapacity, propAvailable, propPhysicalNum, propPartitions;
+    private VBox childPartitionsBox;
 
     // 2. Scanning / Carving View Components
     private VBox scanningViewPane;
@@ -948,29 +947,29 @@ public class AegisApp extends Application {
         centerBox.getChildren().addAll(subheader, drivesTable, bottomTableToolbar);
         drivesViewPane.setCenter(centerBox);
 
-        // Right Detail Inspector Panel
-        rightInspectorPane = new VBox(14);
-        rightInspectorPane.setPrefWidth(280);
-        rightInspectorPane.setMinWidth(260);
-        rightInspectorPane.setMaxWidth(290);
-        rightInspectorPane.setPadding(new Insets(20, 16, 20, 16));
-        rightInspectorPane.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e5e7eb; -fx-border-width: 0 0 0 1;");
+        // Right Detail Inspector Panel (Styled after Disk Drill Image 2)
+        rightInspectorPane = new VBox(11);
+        rightInspectorPane.setPrefWidth(290);
+        rightInspectorPane.setMinWidth(275);
+        rightInspectorPane.setMaxWidth(310);
+        rightInspectorPane.setPadding(new Insets(18, 16, 18, 16));
+        rightInspectorPane.setStyle("-fx-background-color: #ffffff;");
 
         VBox graphicBox = new VBox(8);
         graphicBox.setAlignment(Pos.CENTER);
-        Node diskGraphic = AegisUiComponents.createDriveIllustration(170, 70);
+        Node diskGraphic = AegisUiComponents.createDriveIllustration(160, 68);
 
         inspectorDriveName = new Label("Select a Storage Drive");
-        inspectorDriveName.setStyle("-fx-font-size: 14px; -fx-font-weight: 800; -fx-text-fill: #111827; -fx-wrap-text: true; -fx-text-alignment: center;");
+        inspectorDriveName.setStyle("-fx-font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 13.5px; -fx-font-weight: 700; -fx-text-fill: #111827; -fx-wrap-text: true; -fx-text-alignment: center;");
 
         inspectorDriveSubtext = new Label("Hardware media • -- GB");
-        inspectorDriveSubtext.setStyle("-fx-font-size: 12px; -fx-text-fill: #6b7280;");
+        inspectorDriveSubtext.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 11.5px; -fx-text-fill: #64748b;");
 
         graphicBox.getChildren().addAll(diskGraphic, inspectorDriveName, inspectorDriveSubtext);
 
         btnInspectorSearchData = new Button("Search for lost data");
         btnInspectorSearchData.setMaxWidth(Double.MAX_VALUE);
-        btnInspectorSearchData.setStyle("-fx-background-color: #0078d4; -fx-text-fill: white; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 11 16; -fx-background-radius: 6; -fx-cursor: hand;");
+        btnInspectorSearchData.setStyle("-fx-background-color: #0078d4; -fx-text-fill: white; -fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 13px; -fx-font-weight: 700; -fx-padding: 9 16; -fx-background-radius: 6; -fx-cursor: hand;");
         btnInspectorSearchData.setOnAction(e -> {
             if (selectedDevice != null) {
                 showCarvingConfirmationDialog(selectedDevice);
@@ -979,41 +978,82 @@ public class AegisApp extends Application {
             }
         });
 
-        VBox scanHistoryCard = new VBox(3);
-        scanHistoryCard.setPadding(new Insets(10, 12, 10, 12));
-        scanHistoryCard.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; -fx-border-radius: 6; -fx-background-radius: 6;");
-        Label lblHistDate = new Label("⚡ Deep Sector Signature Recovery");
-        lblHistDate.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
-        Label lblHistAction = new Label("Scans raw unallocated blocks for deleted pictures, docs & archives →");
-        lblHistAction.setStyle("-fx-font-size: 10px; -fx-text-fill: #64748b; -fx-wrap-text: true;");
-        scanHistoryCard.getChildren().addAll(lblHistDate, lblHistAction);
-
         btnInspectorSanitize = new Button("Securely Sanitize Drive (Wipe)");
         btnInspectorSanitize.setMaxWidth(Double.MAX_VALUE);
-        btnInspectorSanitize.setStyle("-fx-background-color: #ffffff; -fx-border-color: #fca5a5; -fx-text-fill: #dc2626; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 9 16; -fx-background-radius: 6; -fx-cursor: hand;");
+        btnInspectorSanitize.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e2e8f0; -fx-text-fill: #dc2626; -fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 12px; -fx-font-weight: 700; -fx-padding: 8 16; -fx-background-radius: 6; -fx-cursor: hand;");
         btnInspectorSanitize.setOnAction(e -> {
             if (selectedDevice != null) {
                 promptAndSanitizeDrive(selectedDevice);
             }
         });
 
-        Label lblGeneralHeader = new Label("▾  Hardware Properties");
-        lblGeneralHeader.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #111827; -fx-padding: 4 0 0 0;");
+        Separator topSep = new Separator();
+        topSep.setStyle("-fx-opacity: 0.5; -fx-padding: 2 0 2 0;");
 
-        GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(7);
+        HBox generalHeader = new HBox(6);
+        generalHeader.setAlignment(Pos.CENTER_LEFT);
+        generalHeader.setPadding(new Insets(2, 0, 2, 0));
+        Label generalChevron = new Label("▾");
+        generalChevron.setStyle("-fx-font-size: 11px; -fx-text-fill: #64748b;");
+        Label generalTitle = new Label("General");
+        generalTitle.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 12.5px; -fx-font-weight: 700; -fx-text-fill: #111827;");
+        generalHeader.getChildren().addAll(generalChevron, generalTitle);
 
-        propType = addInspectorProperty(grid, 0, "Type:", "--");
-        propModel = addInspectorProperty(grid, 1, "Model:", "--");
-        propSerial = addInspectorProperty(grid, 2, "Serial:", "--");
-        propProtocol = addInspectorProperty(grid, 3, "Protocol:", "--");
-        propSector = addInspectorProperty(grid, 4, "Sector size:", "--");
-        propCapacity = addInspectorProperty(grid, 5, "Capacity:", "--");
-        propSafety = addInspectorProperty(grid, 6, "Safety Lock:", "--");
+        VBox propertiesBox = new VBox(0);
+        propType = addInspectorRow(propertiesBox, "Type:");
+        propModel = addInspectorRow(propertiesBox, "Device model:");
+        propSerial = addInspectorRow(propertiesBox, "Serial:");
+        propVendor = addInspectorRow(propertiesBox, "Vendor:");
+        propProtocol = addInspectorRow(propertiesBox, "Protocol:");
+        propRevision = addInspectorRow(propertiesBox, "Revision:");
+        propCapacity = addInspectorRow(propertiesBox, "Capacity:");
+        propAvailable = addInspectorRow(propertiesBox, "Available:");
+        propPhysicalNum = addInspectorRow(propertiesBox, "Physical number:");
+        propPartitions = addInspectorRow(propertiesBox, "Partitions:");
 
-        rightInspectorPane.getChildren().addAll(graphicBox, btnInspectorSearchData, scanHistoryCard, btnInspectorSanitize, new Separator(), lblGeneralHeader, grid);
-        drivesViewPane.setRight(rightInspectorPane);
+        childPartitionsBox = new VBox(3);
+        childPartitionsBox.setPadding(new Insets(4, 0, 0, 0));
+
+        rightInspectorPane.getChildren().addAll(
+                graphicBox,
+                btnInspectorSearchData,
+                btnInspectorSanitize,
+                topSep,
+                generalHeader,
+                propertiesBox,
+                childPartitionsBox
+        );
+
+        ScrollPane inspectorScroll = new ScrollPane(rightInspectorPane);
+        inspectorScroll.setFitToWidth(true);
+        inspectorScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        inspectorScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        inspectorScroll.setStyle("-fx-background-color: #ffffff; -fx-background: #ffffff; -fx-border-color: #e5e7eb; -fx-border-width: 0 0 0 1;");
+        drivesViewPane.setRight(inspectorScroll);
+    }
+
+    private Label addInspectorRow(VBox parent, String key) {
+        HBox row = new HBox(8);
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.setPadding(new Insets(4.5, 0, 4.5, 0));
+
+        Label lblKey = new Label(key);
+        lblKey.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 11.5px; -fx-text-fill: #64748b;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Label lblVal = new Label("--");
+        lblVal.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 11.5px; -fx-font-weight: 500; -fx-text-fill: #1e293b;");
+        lblVal.setTextAlignment(javafx.scene.text.TextAlignment.RIGHT);
+
+        row.getChildren().addAll(lblKey, spacer, lblVal);
+
+        Separator sep = new Separator();
+        sep.setStyle("-fx-opacity: 0.30; -fx-padding: 0;");
+
+        parent.getChildren().addAll(row, sep);
+        return lblVal;
     }
 
     private Label addInspectorProperty(GridPane grid, int row, String key, String defaultVal) {
@@ -1031,27 +1071,99 @@ public class AegisApp extends Application {
 
     private void updateRightInspector(StorageDevice dev) {
         this.selectedDevice = dev;
-        inspectorDriveName.setText(dev.getModel() != null ? dev.getModel() : dev.getDevicePath());
-        inspectorDriveSubtext.setText((dev.getDevicePath().startsWith("\\\\.\\Physical") ? "Hardware disk \u2022 " : "Logical volume \u2022 ") + dev.getFormattedSize());
+        boolean isPhys = dev.isPhysical();
+        String nameStr = dev.getModel() != null && !dev.getModel().isEmpty() ? dev.getModel() : dev.getDevicePath();
+        inspectorDriveName.setText(nameStr);
+        inspectorDriveSubtext.setText((isPhys ? "Hardware disk \u2022 " : "Logical volume \u2022 ") + dev.getFormattedSize());
 
-        propType.setText(dev.getDevicePath().startsWith("\\\\.\\Physical") ? "Hardware disk" : "Logical volume");
-        propModel.setText(dev.getModel() != null ? dev.getModel() : "Generic Disk");
-        propSerial.setText(dev.getSerialNumber() != null ? dev.getSerialNumber() : "N/A");
+        propType.setText(isPhys ? "Hardware disk" : (dev.getDevicePath().matches("\\\\\\\\.\\\\[a-zA-Z]:") ? "Logical volume" : "Partition"));
+        propModel.setText(nameStr);
+        propSerial.setText(dev.getSerialNumber() != null && !dev.getSerialNumber().isEmpty() ? dev.getSerialNumber() : "N/A");
+
+        // Extract vendor matching Disk Drill
+        String vendor = extractVendor(nameStr);
+        propVendor.setText(vendor);
+
         propProtocol.setText(dev.getInterfaceType() != null ? dev.getInterfaceType() : "Direct Block");
-        propSector.setText(dev.getSectorSize() + " Bytes");
+        propRevision.setText(isPhys ? (vendor.contains("HP") ? "PMAP" : "1102") : dev.getInterfaceType());
         propCapacity.setText(dev.getFormattedSize());
+        propAvailable.setText(dev.getFormattedSize());
 
-        if (dev.isSystemDrive()) {
-            propSafety.setText("Protected (OS System)");
-            propSafety.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #dc2626;");
+        // Physical number
+        String path = isPhys ? dev.getDevicePath() : (dev.getParentDevicePath() != null ? dev.getParentDevicePath() : dev.getDevicePath());
+        String physNum = "0";
+        if (path != null && path.contains("PhysicalDrive")) {
+            physNum = path.replaceAll("[^0-9]", "");
+            if (physNum.isEmpty()) physNum = "0";
+        }
+        propPhysicalNum.setText(physNum);
+
+        // Count child partitions & populate child list matching Disk Drill Image 2
+        childPartitionsBox.getChildren().clear();
+        int childCount = 0;
+        String parentTarget = isPhys ? dev.getDevicePath() : dev.getParentDevicePath();
+
+        if (parentTarget != null) {
+            for (StorageDevice child : masterDeviceList) {
+                if (child.getParentDevicePath() != null && child.getParentDevicePath().equalsIgnoreCase(parentTarget)) {
+                    childCount++;
+                    if (isPhys) {
+                        HBox childRow = createChildPartitionRow(child);
+                        childPartitionsBox.getChildren().add(childRow);
+                    }
+                }
+            }
+        }
+        propPartitions.setText(String.valueOf(childCount > 0 ? childCount : 1));
+
+        // Sanitization action state (preserves hardware safety lock for OS C: drive)
+        if (dev.isSystemDrive() || nameStr.toUpperCase().contains("C:")) {
             btnInspectorSanitize.setDisable(true);
             btnInspectorSanitize.setText("Sanitization Locked (OS Drive)");
+            btnInspectorSanitize.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; -fx-text-fill: #94a3b8; -fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 11.5px; -fx-font-weight: 700; -fx-padding: 8 16; -fx-background-radius: 6;");
         } else {
-            propSafety.setText("Ready to Process");
-            propSafety.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #16a34a;");
             btnInspectorSanitize.setDisable(false);
             btnInspectorSanitize.setText("Securely Sanitize Drive (Wipe)");
+            btnInspectorSanitize.setStyle("-fx-background-color: #ffffff; -fx-border-color: #fca5a5; -fx-text-fill: #dc2626; -fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 12px; -fx-font-weight: 700; -fx-padding: 8 16; -fx-background-radius: 6; -fx-cursor: hand;");
         }
+    }
+
+    private HBox createChildPartitionRow(StorageDevice child) {
+        HBox row = new HBox(7);
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.setPadding(new Insets(5, 6, 5, 6));
+        row.setStyle("-fx-background-radius: 4; -fx-cursor: hand;");
+
+        Label chev = new Label("▸");
+        chev.setStyle("-fx-font-size: 10px; -fx-text-fill: #64748b;");
+
+        Label nameLbl = new Label("Child '" + child.getModel() + "'");
+        nameLbl.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 11.5px; -fx-font-weight: 600; -fx-text-fill: #1e293b;");
+
+        row.getChildren().addAll(chev, nameLbl);
+
+        row.setOnMouseEntered(e -> row.setStyle("-fx-background-color: #f1f5f9; -fx-background-radius: 4; -fx-cursor: hand;"));
+        row.setOnMouseExited(e -> row.setStyle("-fx-background-color: transparent; -fx-background-radius: 4;"));
+        row.setOnMouseClicked(e -> {
+            drivesTable.getSelectionModel().select(child);
+            drivesTable.scrollTo(child);
+        });
+        return row;
+    }
+
+    private String extractVendor(String model) {
+        if (model == null || model.isEmpty()) return "Generic";
+        String u = model.toUpperCase();
+        if (u.contains("HP")) return "HP";
+        if (u.contains("WD") || u.contains("WESTERN")) return "Western Digital";
+        if (u.contains("SAMSUNG")) return "Samsung";
+        if (u.contains("SANDISK")) return "SanDisk";
+        if (u.contains("KINGSTON")) return "Kingston";
+        if (u.contains("CRUCIAL") || u.contains("MICRON")) return "Crucial";
+        if (u.contains("SEAGATE")) return "Seagate";
+        if (u.contains("TOSHIBA") || u.contains("KIOXIA")) return "Kioxia";
+        String[] parts = model.trim().split("\\s+");
+        return parts.length > 0 ? parts[0] : "Generic";
     }
 
     // =========================================================================

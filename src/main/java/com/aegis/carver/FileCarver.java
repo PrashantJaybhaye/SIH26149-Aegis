@@ -2,7 +2,6 @@ package com.aegis.carver;
 
 import com.aegis.model.CarvedFile;
 import com.aegis.util.EntropyCalculator;
-import com.aegis.util.FormatUtil;
 import com.aegis.util.HashUtil;
 
 import java.io.*;
