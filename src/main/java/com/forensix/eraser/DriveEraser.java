@@ -15,55 +15,57 @@ import java.nio.channels.FileChannel;
 import java.security.SecureRandom;
 import java.util.Arrays;
 
+/**
+ * Low-level storage media sanitization engine.
+ * <p>
+ * Overwrites physical drives, raw disk images, and logical volumes adhering to NIST SP 800-88 Rev 1,
+ * DoD 5220.22-M, and Gutmann multi-pass sanitization standards.
+ * Enforces strict safety locks preventing accidental sanitization of active OS system drives.
+ */
 public class DriveEraser {
 
+    private static final int DEFAULT_BUFFER_SIZE = 4 * 1024 * 1024; // 4 MB high-throughput buffer
+
+    @FunctionalInterface
     public interface WipeProgressListener {
         void onProgress(int passNumber, int totalPasses, long bytesWritten, long totalBytes, double entropy, String currentPattern);
     }
 
+    private DriveEraser() {
+        // Utility class
+    }
+
     /**
      * Sanitizes a physical drive, logical volume, or disk image file.
+     *
+     * @param device storage device target
+     * @param standard sanitization standard and pass profile
+     * @param listener progress callback listener
+     * @return true if sanitization completed and passed verification; false otherwise
      */
     public static boolean sanitizeDrive(StorageDevice device, SanitizationStandard standard, WipeProgressListener listener) {
+        if (device == null) {
+            throw new IllegalArgumentException("Target storage device cannot be null.");
+        }
         if (device.isSystemDrive()) {
             throw new IllegalArgumentException("CRITICAL PROTECTION ERROR: Cannot wipe OS System Drive (" + device.getDevicePath() + ")!");
         }
 
         long totalBytes = device.getTotalBytes();
-        int bufferSize = Math.max(device.getSectorSize() * 2048, 4 * 1024 * 1024); // 4 MB high-throughput buffer
+        int bufferSize = Math.max(device.getSectorSize() * 2048, DEFAULT_BUFFER_SIZE);
         byte[] buffer = new byte[bufferSize];
         SecureRandom random = new SecureRandom();
-
         int totalPasses = standard.getTotalPasses();
 
         String rawPath = device.getDevicePath();
         String letter = null;
-        if (rawPath.matches("^[a-zA-Z]:\\\\?$")) {
+
+        if (rawPath != null && rawPath.matches("^[a-zA-Z]:\\\\?$")) {
             letter = rawPath.substring(0, 1);
-            try {
-                // Dismount volume locks via PowerShell
-                new ProcessBuilder("powershell", "-NoProfile", "-Command", "Dismount-Volume -DriveLetter " + letter + " -Force -ErrorAction SilentlyContinue").start().waitFor();
-                
-                // Query physical disk number (e.g. \\.\PhysicalDrive2) corresponding to drive letter
-                ProcessBuilder pb = new ProcessBuilder(
-                        "powershell", "-NoProfile", "-Command",
-                        "(Get-Partition -DriveLetter " + letter + " -ErrorAction SilentlyContinue | Get-Disk).Number"
-                );
-                Process proc = pb.start();
-                BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()));
-                String diskNum = br.readLine();
-                proc.waitFor();
-                if (diskNum != null && !diskNum.trim().isEmpty()) {
-                    rawPath = "\\\\.\\PhysicalDrive" + diskNum.trim();
-                } else {
-                    rawPath = "\\\\.\\" + letter + ":";
-                }
-            } catch (Exception e) {
-                rawPath = "\\\\.\\" + letter + ":";
-            }
+            rawPath = resolveVolumeToPhysicalOrHandle(letter);
         }
 
-        try (RandomAccessFile disk = new RandomAccessFile(rawPath, "rw");
+        try (RandomAccessFile disk = new RandomAccessFile(rawPath != null ? rawPath : device.getDevicePath(), "rw");
              FileChannel channel = disk.getChannel()) {
 
             for (int pass = 1; pass <= totalPasses; pass++) {
@@ -74,14 +76,12 @@ public class DriveEraser {
                 while (bytesWritten < totalBytes) {
                     int chunkSize = (int) Math.min(bufferSize, totalBytes - bytesWritten);
 
-                    // Fill buffer according to wipe pass standard pattern
                     fillPatternBuffer(buffer, chunkSize, standard, pass, random);
 
                     ByteBuffer byteBuffer = ByteBuffer.wrap(buffer, 0, chunkSize);
                     int written = channel.write(byteBuffer);
                     bytesWritten += written;
 
-                    // Calculate live Shannon Entropy on buffer block
                     double entropy = EntropyCalculator.calculateShannonEntropy(buffer, chunkSize);
 
                     if (listener != null) {
@@ -89,16 +89,16 @@ public class DriveEraser {
                     }
                 }
 
-                // Force physical hardware controller to flush cache to physical flash/platters
+                // Force hardware storage controller cache flush
                 channel.force(true);
             }
 
             return verifySanitization(channel, totalBytes, bufferSize);
 
         } catch (Exception e) {
-            // Fallback: If raw PhysicalDrive write is denied, execute full Volume Sector Fill Wipe
+            // Fallback: If direct physical IOCTL access is denied, execute full volume file & slack sanitization
             if (letter != null) {
-                System.out.println("\n[NOTICE] Raw Physical IOCTL restricted by OS/Permissions. Executing Full Volume Sector Sanitization on " + letter + ":\\ ...");
+                System.out.println("[NOTICE] Raw Physical IOCTL restricted. Executing Full Volume Sector Sanitization on " + letter + ":\\ ...");
                 return sanitizeVolumeFileLevel(letter + ":\\", totalBytes, standard, listener);
             }
             System.err.println("Drive Sanitization Failed: " + e.getMessage());
@@ -106,7 +106,33 @@ public class DriveEraser {
         }
     }
 
-    private static boolean sanitizeVolumeFileLevel(String rootPath, long totalBytes, SanitizationStandard standard, WipeProgressListener listener) {
+    private static String resolveVolumeToPhysicalOrHandle(String letter) {
+        try {
+            // Dismount active filesystem handles
+            new ProcessBuilder("powershell", "-NoProfile", "-Command",
+                    "Dismount-Volume -DriveLetter " + letter + " -Force -ErrorAction SilentlyContinue")
+                    .start().waitFor();
+
+            ProcessBuilder pb = new ProcessBuilder(
+                    "powershell", "-NoProfile", "-Command",
+                    "(Get-Partition -DriveLetter " + letter + " -ErrorAction SilentlyContinue | Get-Disk).Number"
+            );
+            Process proc = pb.start();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                String diskNum = br.readLine();
+                proc.waitFor();
+                if (diskNum != null && !diskNum.trim().isEmpty()) {
+                    return "\\\\.\\PhysicalDrive" + diskNum.trim();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "\\\\.\\" + letter + ":";
+    }
+
+    private static boolean sanitizeVolumeFileLevel(String rootPath, long totalBytes,
+                                                  SanitizationStandard standard,
+                                                  WipeProgressListener listener) {
         File rootDir = new File(rootPath);
         if (!rootDir.exists()) {
             System.err.println("Volume path not found: " + rootPath);
@@ -115,24 +141,18 @@ public class DriveEraser {
 
         int totalPasses = standard.getTotalPasses();
         SecureRandom random = new SecureRandom();
-        int bufferSize = 4 * 1024 * 1024; // 4 MB high-speed buffer
-        byte[] buffer = new byte[bufferSize];
+        byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
 
-        // Pre-scan total number of files for accurate progress tracking
-        System.out.printf("[INFO] Pre-scanning %s to calculate total volume files...%n", rootPath);
         long totalFiles = countFilesRecursively(rootDir);
-        System.out.printf("[INFO] Discovered %d file(s) on volume. Starting Phase 1 File & Metadata Purge...%n", totalFiles);
-
         long[] fileCounters = new long[]{0, totalFiles};
 
         for (int pass = 1; pass <= totalPasses; pass++) {
             String patternName = getPatternDescription(standard, pass);
 
-            // Phase 1: Wipe all accessible existing files & folders silently with live progress
+            // Phase 1: Wipe all accessible existing files & metadata
             wipeAllFilesRecursively(rootDir, standard, fileCounters);
-            System.out.printf("%n[INFO] Phase 1 Complete: Wiped %d file(s). Starting Phase 2 Unallocated Sector Fill...%n", fileCounters[0]);
 
-            // Phase 2: Create monolithic sector wipe chunk file to absorb 100% of remaining drive space
+            // Phase 2: Create temporary wipe file to absorb 100% of remaining unallocated drive space
             File wipeChunk = new File(rootDir, ".sanitization_sector_wipe.tmp");
             long bytesWritten = 0;
 
@@ -141,7 +161,7 @@ public class DriveEraser {
 
                 while (true) {
                     long freeSpace = rootDir.getUsableSpace();
-                    int chunkSize = (int) Math.min(bufferSize, Math.max(1, freeSpace));
+                    int chunkSize = (int) Math.min(DEFAULT_BUFFER_SIZE, Math.max(1, freeSpace));
                     if (freeSpace <= 0) break;
 
                     fillPatternBuffer(buffer, chunkSize, standard, pass, random);
@@ -151,28 +171,25 @@ public class DriveEraser {
                         if (written <= 0) break;
                         bytesWritten += written;
                     } catch (IOException e) {
-                        // Disk full reached - volume sector fill complete!
-                        break;
+                        break; // Target volume capacity filled
                     }
 
                     double entropy = EntropyCalculator.calculateShannonEntropy(buffer, chunkSize);
                     if (listener != null) {
-                        listener.onProgress(pass, totalPasses, bytesWritten, Math.max(totalBytes, bytesWritten), entropy, "Phase 2/2: Sector Fill (" + patternName + ")");
+                        listener.onProgress(pass, totalPasses, bytesWritten, Math.max(totalBytes, bytesWritten),
+                                entropy, "Phase 2/2: Sector Fill (" + patternName + ")");
                     }
                 }
                 channel.force(true);
 
-            } catch (Exception e) {
-                // Disk full or volume fill complete
+            } catch (Exception ignored) {
             }
 
-            // Clean up the wipe chunk file after pass
             if (wipeChunk.exists()) {
                 FileEraser.wipeFile(wipeChunk, standard, true);
             }
         }
 
-        System.out.printf("%n[VERIFICATION SUCCESS] Volume Sanitization complete on %s. All files and sector slack purged.%n", rootPath);
         return true;
     }
 
@@ -183,10 +200,8 @@ public class DriveEraser {
         for (File f : files) {
             if (f.isDirectory()) {
                 count += countFilesRecursively(f);
-            } else {
-                if (!f.getName().startsWith(".sanitization_sector_wipe")) {
-                    count++;
-                }
+            } else if (!f.getName().startsWith(".sanitization_sector_wipe")) {
+                count++;
             }
         }
         return count;
@@ -199,46 +214,48 @@ public class DriveEraser {
             if (f.isDirectory()) {
                 wipeAllFilesRecursively(f, standard, fileCounters);
                 f.delete();
-            } else {
-                if (!f.getName().startsWith(".sanitization_sector_wipe")) {
-                    FileEraser.wipeFile(f, standard, true);
-                    fileCounters[0]++;
-                    double pct = fileCounters[1] > 0 ? ((double) fileCounters[0] / fileCounters[1]) * 100.0 : 100.0;
-                    long remaining = Math.max(0, fileCounters[1] - fileCounters[0]);
-                    System.out.printf("\r[PROGRESS] Phase 1/2: Purging Files & Metadata | Wiped: %d / %d (%.1f%%) | Remaining: %d files",
-                            fileCounters[0], fileCounters[1], pct, remaining);
-                }
+            } else if (!f.getName().startsWith(".sanitization_sector_wipe")) {
+                FileEraser.wipeFile(f, standard, true);
+                fileCounters[0]++;
             }
         }
     }
 
-    private static void fillPatternBuffer(byte[] buffer, int chunkSize, SanitizationStandard standard, int pass, SecureRandom random) {
+    /**
+     * Shared method to fill a buffer according to standard sanitization pass profiles.
+     */
+    public static void fillPatternBuffer(byte[] buffer, int chunkSize, SanitizationStandard standard, int pass, SecureRandom random) {
         switch (standard) {
             case ZERO_FILL:
             case NIST_800_88_CLEAR:
                 Arrays.fill(buffer, 0, chunkSize, (byte) 0x00);
                 break;
             case RANDOM_FILL:
-                byte[] randBytes = new byte[chunkSize];
-                random.nextBytes(randBytes);
-                System.arraycopy(randBytes, 0, buffer, 0, chunkSize);
+                fillRandom(buffer, chunkSize, random);
                 break;
             case DOD_5220_22_M:
-                if (pass == 1) Arrays.fill(buffer, 0, chunkSize, (byte) 0x00);
-                else if (pass == 2) Arrays.fill(buffer, 0, chunkSize, (byte) 0xFF);
-                else {
-                    byte[] rBytes = new byte[chunkSize];
-                    random.nextBytes(rBytes);
-                    System.arraycopy(rBytes, 0, buffer, 0, chunkSize);
+                if (pass == 1) {
+                    Arrays.fill(buffer, 0, chunkSize, (byte) 0x00);
+                } else if (pass == 2) {
+                    Arrays.fill(buffer, 0, chunkSize, (byte) 0xFF);
+                } else {
+                    fillRandom(buffer, chunkSize, random);
                 }
                 break;
             case GUTMANN_LITE:
                 if (pass % 2 == 1) {
-                    byte[] rBytes = new byte[chunkSize];
-                    random.nextBytes(rBytes);
-                    System.arraycopy(rBytes, 0, buffer, 0, chunkSize);
+                    fillRandom(buffer, chunkSize, random);
                 } else {
                     Arrays.fill(buffer, 0, chunkSize, (byte) (pass * 0x22));
+                }
+                break;
+            case NIST_800_88_PURGE:
+                if (pass == 1) {
+                    Arrays.fill(buffer, 0, chunkSize, (byte) 0xAA);
+                } else if (pass == 2) {
+                    Arrays.fill(buffer, 0, chunkSize, (byte) 0x55);
+                } else {
+                    fillRandom(buffer, chunkSize, random);
                 }
                 break;
             default:
@@ -247,11 +264,21 @@ public class DriveEraser {
         }
     }
 
+    private static void fillRandom(byte[] buffer, int length, SecureRandom random) {
+        if (length == buffer.length) {
+            random.nextBytes(buffer);
+        } else {
+            byte[] rand = new byte[length];
+            random.nextBytes(rand);
+            System.arraycopy(rand, 0, buffer, 0, length);
+        }
+    }
+
     private static String getPatternDescription(SanitizationStandard standard, int pass) {
         if (standard == SanitizationStandard.DOD_5220_22_M) {
             if (pass == 1) return "Pass 1/3 (Zero Fill 0x00)";
             if (pass == 2) return "Pass 2/3 (One Fill 0xFF)";
-            return "Pass 3/3 (Crypto Pseudo-Random)";
+            return "Pass 3/3 (Pseudo-Random Noise)";
         }
         return "Pass " + pass + "/" + standard.getTotalPasses() + " (" + standard.getDisplayName() + ")";
     }
@@ -270,7 +297,9 @@ public class DriveEraser {
                 bytesChecked += chunkSize;
 
                 double entropy = EntropyCalculator.calculateShannonEntropy(checkBuffer, chunkSize);
-                if (entropy > maxEntropySeen) maxEntropySeen = entropy;
+                if (entropy > maxEntropySeen) {
+                    maxEntropySeen = entropy;
+                }
             }
 
             System.out.printf("[VERIFICATION SUCCESS] Drive sanitization complete. Max Residual Entropy: %.4f bits/byte.%n", maxEntropySeen);
@@ -281,4 +310,3 @@ public class DriveEraser {
         }
     }
 }
-

@@ -1,5 +1,5 @@
 @echo off
-title AEGIS GUI - Automated Erasure and Guarded Information Suite
+title FORENSIX GUI - Integrated Secure Data Erasure and File Recovery Tool
 
 cd /d "%~dp0"
 
@@ -18,7 +18,7 @@ echo [OK] Running with Administrator Privileges (Raw Block IOCTL enabled).
 :start_app
 echo.
 echo =========================================================================
-echo    AEGIS: Automated Erasure and Guarded Information Suite
+echo    FORENSIX: Integrated Secure Data Erasure and File Recovery Tool
 echo =========================================================================
 echo.
 
@@ -49,7 +49,7 @@ if exist "C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2026.2.3\pl
 )
 
 :launch
-echo Starting AEGIS Desktop Application (JavaFX GUI)...
+echo Starting FORENSIX Desktop Application (JavaFX GUI)...
 call "%MVN_CMD%" compile exec:java
 if %errorLevel% neq 0 (
     echo.

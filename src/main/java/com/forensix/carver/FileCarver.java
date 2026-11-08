@@ -2,6 +2,7 @@ package com.forensix.carver;
 
 import com.forensix.model.CarvedFile;
 import com.forensix.util.EntropyCalculator;
+import com.forensix.util.FormatUtil;
 import com.forensix.util.HashUtil;
 
 import java.io.*;
@@ -11,7 +12,19 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Advanced raw sector forensic file carving engine.
+ * <p>
+ * Scans raw block streams, physical disks, or forensic disk images (.raw/.dd/.img)
+ * without relying on filesystem metadata tables (FAT/NTFS/EXT).
+ * Identifies file boundaries using magic byte headers/footers, calculates live Shannon entropy,
+ * and extracts validated evidence files with SHA-256 hashes for chain-of-custody tracking.
+ */
 public class FileCarver {
+
+    private static final int SECTOR_SIZE = 512;
+    private static final int STREAM_CHUNK_SIZE = 1024 * 1024; // 1 MB streaming window for fluid performance
+    private static final int OVERLAP_BUFFER_SIZE = 4096;      // Prevents missing signatures spanning chunk boundaries
 
     @FunctionalInterface
     public interface CarverProgressListener {
@@ -20,13 +33,17 @@ public class FileCarver {
                         double currentEntropy, CarvedFile latestFound);
     }
 
+    private FileCarver() {
+        // Utility class
+    }
+
     public static List<CarvedFile> carveDevice(String sourcePath, File outputDir) {
-        return carveDevice(sourcePath, outputDir, (CarverProgressListener) null);
+        return carveDevice(sourcePath, outputDir, null);
     }
 
     /**
      * Normalizes a storage path into a valid Win32 device block handle.
-     * e.g., "E:\" or "E:" -> "\\.\E:" (or "\\.\PhysicalDriveX" if queryable).
+     * (e.g. "E:\" or "E:" -> "\\.\PhysicalDriveX" or "\\.\E:").
      */
     public static String normalizeDevicePath(String sourcePath) {
         if (sourcePath == null || sourcePath.trim().isEmpty()) {
@@ -94,9 +111,6 @@ public class FileCarver {
         }
 
         List<FileSignature> signatures = FileSignature.getStandardForensicSignatures();
-        int sectorSize = 512;
-        int readChunkSize = 1024 * 1024; // 1 MB high-speed streaming chunk for fluid, non-blocking UI
-
         String targetPath = normalizeDevicePath(sourcePath);
         RandomAccessFile rawDisk = null;
         FileChannel channel = null;
@@ -105,50 +119,24 @@ public class FileCarver {
             try {
                 rawDisk = new RandomAccessFile(targetPath, "r");
                 channel = rawDisk.getChannel();
-            } catch (Exception e1) {
+            } catch (Exception primaryEx) {
                 String alt = getFallbackVolumePath(sourcePath);
                 if (alt != null && !alt.equalsIgnoreCase(targetPath)) {
-                    try {
-                        rawDisk = new RandomAccessFile(alt, "r");
-                        channel = rawDisk.getChannel();
-                        targetPath = alt;
-                    } catch (Exception e2) {
-                        throw e1;
-                    }
+                    rawDisk = new RandomAccessFile(alt, "r");
+                    channel = rawDisk.getChannel();
+                    targetPath = alt;
                 } else {
-                    throw e1;
+                    throw primaryEx;
                 }
             }
 
-            long totalBytes = -1;
-            try {
-                totalBytes = channel.size();
-            } catch (Exception e) {
-                try {
-                    totalBytes = rawDisk.length();
-                } catch (Exception ignored) {}
-            }
-
-            if (totalBytes <= 0) {
-                String driveRoot = extractDriveRoot(sourcePath);
-                if (driveRoot != null) {
-                    File df = new File(driveRoot);
-                    if (df.getTotalSpace() > 0) {
-                        totalBytes = df.getTotalSpace();
-                    }
-                }
-            }
-
-            if (totalBytes <= 0) {
-                totalBytes = Long.MAX_VALUE;
-            }
-
+            long totalBytes = determineTotalBytes(channel, rawDisk, sourcePath);
             long currentPosition = 0;
-            byte[] scanBuffer = new byte[readChunkSize];
+            byte[] scanBuffer = new byte[STREAM_CHUNK_SIZE];
 
             int fileCount = 0;
             boolean reachedEof = false;
-            long totalSectors = (totalBytes != Long.MAX_VALUE && totalBytes > 0) ? (totalBytes / sectorSize) : 0;
+            long totalSectors = (totalBytes != Long.MAX_VALUE && totalBytes > 0) ? (totalBytes / SECTOR_SIZE) : 0;
 
             while (!reachedEof && (totalBytes == Long.MAX_VALUE || currentPosition < totalBytes)) {
                 int bytesToScan = scanBuffer.length;
@@ -157,11 +145,11 @@ public class FileCarver {
                 }
                 if (bytesToScan <= 0) break;
 
-                bytesToScan = (bytesToScan / sectorSize) * sectorSize;
+                bytesToScan = (bytesToScan / SECTOR_SIZE) * SECTOR_SIZE;
                 if (bytesToScan <= 0) break;
 
                 ByteBuffer buffer = ByteBuffer.wrap(scanBuffer, 0, bytesToScan);
-                int bytesRead = 0;
+                int bytesRead;
                 try {
                     bytesRead = channel.read(buffer, currentPosition);
                 } catch (Exception e) {
@@ -174,45 +162,14 @@ public class FileCarver {
                     break;
                 }
 
-                // Dynamic Phase Progression based on realistic forensic scanning pipeline
-                String currentPhase;
-                double scanProgressRatio = (totalBytes > 0 && totalBytes != Long.MAX_VALUE) ?
-                        (double) currentPosition / totalBytes : 0.0;
-
-                if (totalBytes > 0 && totalBytes != Long.MAX_VALUE) {
-                    if (scanProgressRatio < 0.08) {
-                        currentPhase = "Phase 1/4: Partition & File System Structure Analysis";
-                    } else if (scanProgressRatio < 0.22) {
-                        currentPhase = "Phase 2/4: Fast Scan — Master File Table & Directory Clusters";
-                    } else if (scanProgressRatio < 0.85) {
-                        if (scanProgressRatio < 0.42) {
-                            currentPhase = "Phase 3/4: Deep Raw Carving — Audio, Video & Multimedia (MP3, MP4, WAV)";
-                        } else if (scanProgressRatio < 0.65) {
-                            currentPhase = "Phase 3/4: Deep Raw Carving — Documents & Compressed Archives (PDF, ZIP)";
-                        } else {
-                            currentPhase = "Phase 3/4: Deep Raw Carving — Photos, Bitmaps & Raw Payload Signatures";
-                        }
-                    } else {
-                        currentPhase = "Phase 4/4: Signature Reconstruction & Forensic Manifest Construction";
-                    }
-                } else {
-                    if (currentPosition < 10L * 1024L * 1024L) {
-                        currentPhase = "Phase 1/4: Partition & File System Structure Analysis";
-                    } else if (currentPosition < 50L * 1024L * 1024L) {
-                        currentPhase = "Phase 2/4: Fast Scan — Directory Clusters";
-                    } else {
-                        currentPhase = "Phase 3/4: Deep Raw Sector Magic-Byte Carving";
-                    }
-                }
-
-                // Compute peak Shannon Entropy across 16 KB sector windows in this chunk
+                String currentPhase = determineScanPhase(totalBytes, currentPosition);
                 double chunkEntropy = EntropyCalculator.calculatePeakBlockEntropy(scanBuffer, bytesRead, 16384);
-
-                long currentSector = currentPosition / sectorSize;
+                long currentSector = currentPosition / SECTOR_SIZE;
 
                 // Sector-aligned signature scan
-                for (int i = 0; i < bytesRead - 16; i += sectorSize) {
+                for (int i = 0; i < bytesRead - 16; i += SECTOR_SIZE) {
                     byte b0 = scanBuffer[i];
+                    // Fast pre-filter for known signature header magic bytes
                     if (b0 != (byte) 0xFF && b0 != 0x25 && b0 != (byte) 0x89 && b0 != 0x50 &&
                         b0 != 0x00 && b0 != 0x52 && b0 != 0x49 && b0 != 0x37 && b0 != 0x53) {
                         continue;
@@ -221,7 +178,7 @@ public class FileCarver {
                     for (FileSignature sig : signatures) {
                         if (matchBytes(scanBuffer, i, sig.getHeaderMagic())) {
                             long absoluteStartOffset = currentPosition + i;
-                            long startLba = absoluteStartOffset / sectorSize;
+                            long startLba = absoluteStartOffset / SECTOR_SIZE;
 
                             CarvedFile carved = extractFilePayload(channel, absoluteStartOffset, startLba, sig, outputDir, fileCount + 1);
                             if (carved != null) {
@@ -242,8 +199,8 @@ public class FileCarver {
                     break;
                 }
 
-                long nextPos = currentPosition + bytesRead - 4096;
-                long advancedPos = (nextPos / sectorSize) * sectorSize;
+                long nextPos = currentPosition + bytesRead - OVERLAP_BUFFER_SIZE;
+                long advancedPos = (nextPos / SECTOR_SIZE) * SECTOR_SIZE;
                 if (advancedPos <= currentPosition) {
                     break;
                 }
@@ -267,13 +224,63 @@ public class FileCarver {
                 carveFromDriveFilesystem(new File(driveRoot), outputDir, carvedFiles, listener);
             }
         } finally {
-            try {
-                if (channel != null) channel.close();
-                if (rawDisk != null) rawDisk.close();
-            } catch (Exception ignored) {}
+            closeSilently(channel);
+            closeSilently(rawDisk);
         }
 
         return carvedFiles;
+    }
+
+    private static long determineTotalBytes(FileChannel channel, RandomAccessFile rawDisk, String sourcePath) {
+        long totalBytes = -1;
+        try {
+            totalBytes = channel.size();
+        } catch (Exception e) {
+            try {
+                totalBytes = rawDisk.length();
+            } catch (Throwable ignored) {}
+        }
+
+        if (totalBytes <= 0) {
+            String driveRoot = extractDriveRoot(sourcePath);
+            if (driveRoot != null) {
+                File df = new File(driveRoot);
+                if (df.getTotalSpace() > 0) {
+                    totalBytes = df.getTotalSpace();
+                }
+            }
+        }
+
+        return totalBytes > 0 ? totalBytes : Long.MAX_VALUE;
+    }
+
+    private static String determineScanPhase(long totalBytes, long currentPosition) {
+        if (totalBytes > 0 && totalBytes != Long.MAX_VALUE) {
+            double scanRatio = (double) currentPosition / totalBytes;
+            if (scanRatio < 0.08) {
+                return "Phase 1/4: Partition & File System Structure Analysis";
+            } else if (scanRatio < 0.22) {
+                return "Phase 2/4: Fast Scan — Master File Table & Directory Clusters";
+            } else if (scanRatio < 0.85) {
+                if (scanRatio < 0.42) {
+                    return "Phase 3/4: Deep Raw Carving — Audio, Video & Multimedia (MP3, MP4, WAV)";
+                } else if (scanRatio < 0.65) {
+                    return "Phase 3/4: Deep Raw Carving — Documents & Compressed Archives (PDF, ZIP)";
+                } else {
+                    return "Phase 3/4: Deep Raw Carving — Photos, Bitmaps & Raw Payload Signatures";
+                }
+            } else {
+                return "Phase 4/4: Signature Reconstruction & Forensic Manifest Construction";
+            }
+        } else {
+            if (currentPosition < 10L * 1024L * 1024L) {
+                return "Phase 1/4: Partition & File System Structure Analysis";
+            } else if (currentPosition < 50L * 1024L * 1024L) {
+                return "Phase 2/4: Fast Scan — Directory Clusters";
+            } else {
+                return "Phase 3/4: Deep Raw Sector Magic-Byte Carving";
+            }
+        }
     }
 
     private static String extractDriveRoot(String path) {
@@ -295,7 +302,7 @@ public class FileCarver {
         collectFiles(driveRoot, files, 0);
 
         long totalBytes = driveRoot.getTotalSpace();
-        long totalSectors = totalBytes > 0 ? (totalBytes / 512) : 0;
+        long totalSectors = totalBytes > 0 ? (totalBytes / SECTOR_SIZE) : 0;
         long scannedBytes = 0;
         int count = carvedFiles.size();
 
@@ -306,7 +313,9 @@ public class FileCarver {
                 byte[] sample = new byte[(int) Math.min(f.length(), 4096)];
                 try (FileInputStream fis = new FileInputStream(f)) {
                     int r = fis.read(sample);
-                    if (r > 0) entropy = EntropyCalculator.calculateShannonEntropy(sample, r);
+                    if (r > 0) {
+                        entropy = EntropyCalculator.calculateShannonEntropy(sample, r);
+                    }
                 }
 
                 String ext = getFileExtension(f.getName());
@@ -316,7 +325,7 @@ public class FileCarver {
                 File outFile = new File(outputDir, id + "_RECOVERED_" + f.getName());
                 Files.copy(f.toPath(), outFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
-                long currentSec = scannedBytes / 512;
+                long currentSec = scannedBytes / SECTOR_SIZE;
                 CarvedFile cf = new CarvedFile(
                         id, ext.replace(".", "").toUpperCase() + " File", ext,
                         currentSec, scannedBytes, f.length(),
@@ -330,7 +339,7 @@ public class FileCarver {
                     listener.onProgress("Phase 2/3: Deep Volume File Analysis & Extraction",
                             currentSec, totalSectors, scannedBytes, totalBytes, count, entropy, cf);
                 }
-            } catch (Exception ignored) {}
+            } catch (Throwable ignored) {}
         }
 
         if (listener != null) {
@@ -370,10 +379,9 @@ public class FileCarver {
                 if (chanSize > startOffset) {
                     maxRead = Math.min(maxRead, chanSize - startOffset);
                 }
-            } catch (Exception ignored) {}
+            } catch (Throwable ignored) {}
 
             byte[] payload = new byte[(int) maxRead];
-
             ByteBuffer buf = ByteBuffer.wrap(payload);
             int read = channel.read(buf, startOffset);
 
@@ -400,36 +408,7 @@ public class FileCarver {
             byte[] finalFileBytes = new byte[extractedLength];
             System.arraycopy(payload, 0, finalFileBytes, 0, extractedLength);
 
-            String extractedTitle = null;
-
-            if (sig.getExtension().equalsIgnoreCase(".pdf") && isIntact) {
-                try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(finalFileBytes)) {
-                    isIntact = (doc.getNumberOfPages() > 0);
-                    if (doc.getDocumentInformation() != null && doc.getDocumentInformation().getTitle() != null) {
-                        String title = doc.getDocumentInformation().getTitle().trim();
-                        if (!title.isEmpty()) {
-                            extractedTitle = title.replaceAll("[^a-zA-Z0-9_\\-\\.]", "_").replaceAll("_+", "_");
-                        }
-                    }
-                } catch (Exception pdfErr) {
-                    isIntact = false;
-                }
-            }
-
-            if (sig.getExtension().equalsIgnoreCase(".pdf") && extractedTitle == null) {
-                String payloadStr = new String(finalFileBytes, 0, Math.min(finalFileBytes.length, 4096));
-                int titleIdx = payloadStr.indexOf("/Title");
-                if (titleIdx != -1) {
-                    int openParen = payloadStr.indexOf("(", titleIdx);
-                    int closeParen = payloadStr.indexOf(")", openParen);
-                    if (openParen != -1 && closeParen > openParen) {
-                        String rawTitle = payloadStr.substring(openParen + 1, closeParen).trim();
-                        if (!rawTitle.isEmpty()) {
-                            extractedTitle = rawTitle.replaceAll("[^a-zA-Z0-9_\\-\\.]", "_").replaceAll("_+", "_");
-                        }
-                    }
-                }
-            }
+            String extractedTitle = extractDocumentTitle(sig, finalFileBytes, isIntact);
 
             String sha256 = HashUtil.calculateSHA256(finalFileBytes);
             double entropy = EntropyCalculator.calculateShannonEntropy(finalFileBytes, finalFileBytes.length);
@@ -440,7 +419,8 @@ public class FileCarver {
 
             String statusPrefix = isIntact ? "INTACT" : "FRAGMENTED";
             String id = String.format("CARVE_%04d", count);
-            String titlePart = (extractedTitle != null && !extractedTitle.isEmpty()) ? extractedTitle : sig.getName().replace(" ", "_");
+            String titlePart = (extractedTitle != null && !extractedTitle.isEmpty()) ?
+                    extractedTitle : sig.getName().replace(" ", "_");
             String fileName = id + "_" + statusPrefix + "_" + titlePart + sig.getExtension();
             File outFile = new File(outputDir, fileName);
 
@@ -453,12 +433,45 @@ public class FileCarver {
                     extractedLength, Math.min(confidence, 0.99), sha256, isIntact
             );
             carved.setOutputFilePath(outFile.getAbsolutePath());
-
             return carved;
 
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static String extractDocumentTitle(FileSignature sig, byte[] bytes, boolean isIntact) {
+        if (!sig.getExtension().equalsIgnoreCase(".pdf")) {
+            return null;
+        }
+
+        String extractedTitle = null;
+        if (isIntact) {
+            try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(bytes)) {
+                if (doc.getDocumentInformation() != null && doc.getDocumentInformation().getTitle() != null) {
+                    String title = doc.getDocumentInformation().getTitle().trim();
+                    if (!title.isEmpty()) {
+                        extractedTitle = title.replaceAll("[^a-zA-Z0-9_\\-\\.]", "_").replaceAll("_+", "_");
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        if (extractedTitle == null) {
+            String payloadStr = new String(bytes, 0, Math.min(bytes.length, 4096));
+            int titleIdx = payloadStr.indexOf("/Title");
+            if (titleIdx != -1) {
+                int openParen = payloadStr.indexOf("(", titleIdx);
+                int closeParen = payloadStr.indexOf(")", openParen);
+                if (openParen != -1 && closeParen > openParen) {
+                    String rawTitle = payloadStr.substring(openParen + 1, closeParen).trim();
+                    if (!rawTitle.isEmpty()) {
+                        extractedTitle = rawTitle.replaceAll("[^a-zA-Z0-9_\\-\\.]", "_").replaceAll("_+", "_");
+                    }
+                }
+            }
+        }
+        return extractedTitle;
     }
 
     private static boolean matchBytes(byte[] buffer, int offset, byte[] target) {
@@ -483,5 +496,13 @@ public class FileCarver {
             if (matchBytes(buffer, i, target)) return i;
         }
         return -1;
+    }
+
+    private static void closeSilently(Closeable closeable) {
+        if (closeable != null) {
+            try {
+                closeable.close();
+            } catch (Throwable ignored) {}
+        }
     }
 }

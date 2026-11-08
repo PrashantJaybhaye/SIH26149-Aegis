@@ -1,4 +1,4 @@
-# AEGIS: Automated Erasure and Guarded Information Suite
+# FORENSIX: Integrated Secure Data Erasure & Advanced Forensic File Recovery Tool
 
 **Smart India Hackathon 2026 (SIH26149)**
 * **Organization:** National Technical Research Organisation (NTRO)
@@ -7,19 +7,11 @@
 
 ---
 
-**To remove the directory from Git's index without deleting your local files:**
-
-```bash
-
-git rm -r --cached reports
-
-```
-
 ## 📌 Executive Summary
 
-**AEGIS** (**Automated Erasure and Guarded Information Suite**) is a unified digital forensics and cybersecurity platform that integrates **Secure Hardware & Logical Data Sanitization** with **Advanced Forensic File Carving & Recovery**.
+**FORENSIX** is a unified digital forensics and cybersecurity platform that integrates **Secure Hardware & Logical Data Sanitization** with **Advanced Forensic File Carving & Recovery**.
 
-Existing tools force cybersecurity teams and law enforcement agencies to use separate, fragmented software for wiping (e.g., DBAN, Blancco) and recovery (e.g., Autopsy, Scalpel, PhotoRec). **AEGIS** unifies both capabilities into a single environment built specifically for the **National Technical Research Organisation (NTRO)** under **SIH 2026 (SIH26149)**.
+Existing tools force cybersecurity teams and law enforcement agencies to use separate, fragmented software for wiping (e.g., DBAN, Blancco) and recovery (e.g., Autopsy, Scalpel, PhotoRec). **FORENSIX** unifies both capabilities into a single environment built specifically for the **National Technical Research Organisation (NTRO)** under **SIH 2026 (SIH26149)**.
 
 ---
 
@@ -27,7 +19,7 @@ Existing tools force cybersecurity teams and law enforcement agencies to use sep
 
 * **Law Enforcement & Forensics Units:** Extracting deleted evidence from seized drives, USBs, and memory cards without relying on filesystem metadata.
 * **Cybersecurity & IT Defense Teams:** Securely destroying sensitive data on decommissioned hardware to prevent unauthorized recovery.
-* **Government & Military Agencies (NTRO):** Guaranteeing media sanitization compliance with court-verifiable audit reports.
+* **Government & Military Agencies (NTRO):** Guaranteeing media sanitization compliance with court-verifiable audit reports and immutable blockchain ledgers.
 
 ---
 
@@ -72,7 +64,8 @@ com.forensix/
 │   └── StorageDetector.java     ← Cross-platform drive detection (Win32/Linux)
 └── util/
     ├── EntropyCalculator.java   ← Shannon entropy (bits/byte) calculator
-    └── HashUtil.java            ← SHA-256 hash utility
+    ├── FormatUtil.java          ← Unified human-readable size, hash, and count formatting
+    └── HashUtil.java            ← Centralized SHA-256 hash utility
 ```
 
 ---
@@ -98,6 +91,10 @@ com.forensix/
 ### Module 4: Cryptographic Audit & Reporting (`ReportGenerator.java`)
 * **Court-Ready PDF Certificates:** Exports PDF certificates detailing device model, serial number, sanitization standard used, pass counts, SHA-256 hashes, and entropy verification results.
 
+### Module 5: Immutable Audit Blockchain (`AuditBlockchain.java`)
+* **Tamper-Evident Ledger:** Maintains a SHA-256 hash-chained block ledger recording every sanitization, file shredding, and carving event.
+* **Integrity Verification:** Instant cryptographic verification of chain state and parent block linkages.
+
 ---
 
 ## 🚀 Setup & Execution Guide
@@ -115,7 +112,7 @@ The simplest way to run the platform is using the included launcher scripts:
 
 * **Desktop Application (JavaFX GUI):**  
   Double-click **`run.bat`** or **`run-gui.bat`**  
-  *(Opens the modern dark-themed cybersecurity GUI with real-time graphs and tables).*
+  *(Opens the modern desktop GUI with real-time graphs and tables).*
 * **Terminal Dashboard (CLI Mode):**  
   Double-click **`run-cli.bat`**  
   *(Opens the interactive numbered terminal menu).*
@@ -144,40 +141,21 @@ Open Command Prompt or PowerShell in the project directory:
 # 1. Clean and compile the source code
 mvn clean compile
 
-# 2. Launch the interactive AEGIS platform
+# 2. Launch the interactive FORENSIX platform
 mvn exec:java -Dexec.mainClass="com.forensix.Main"
 ```
-
-> **Note if `mvn` is not recognized:**  
-> If Maven is not added to your Windows system PATH, you can run directly using IntelliJ's bundled Maven:
-> ```powershell
-> & "C:\Program Files\JetBrains\IntelliJ IDEA 2026.2.3\plugins\maven-plugin\lib\maven3\bin\mvn.cmd" compile exec:java
-> ```
 
 ---
 
 ### 🧪 Automated Demonstration & Verification (Option 5)
 
-To quickly test all 4 core modules without risking real drives:
-1. Launch the application and type **`5`** (End-to-End System Demonstration).
+To quickly test all core modules without risking real drives:
+1. Launch the application and select **`5`** (End-to-End System Demonstration).
 2. The benchmark engine will:
    - Generate a 10 MB mock raw disk image (`test_evidence.raw`) containing embedded hidden JPEG and PDF files.
    - Run the **File Carver** to extract the files into `carved_evidence/` and compute SHA-256 hashes.
    - Run the **Secure Drive Eraser** (NIST SP 800-88 Clear) and calculate live Shannon Entropy ($0.0000$ bits/byte).
    - Generate a tamper-evident court-admissible audit certificate PDF in `reports/`.
-
----
-
-## 🎮 Main Menu Options Explained
-
-| Option | Name | Description |
-| :---: | :--- | :--- |
-| **1** | **Detect Storage Drives** | Queries the Win32/POSIX subsystem for physical disks, size, serials, and flags OS system drives. |
-| **2** | **Secure Drive Eraser** | Block-level sanitization using NIST 800-88, DoD 5220.22-M, or Zero-fill with live Shannon entropy calculation. |
-| **3** | **Selective File & Slack Eraser** | Multi-pass file shredding, slack space scrubbing, timestamp epoch zeroing, and MFT name scrambling. |
-| **4** | **Advanced File Carving** | Scans raw sectors/images for magic bytes (JPEG, PNG, PDF, ZIP), validates file structure, and exports carved evidence. |
-| **5** | **End-to-End Demonstration** | Automated test suite verifying carving, wiping, entropy validation, and PDF generation on synthetic media. |
-| **6** | **Exit** | Safely exits the platform. |
 
 ---
 
@@ -187,4 +165,3 @@ Compliant with:
 * **NIST SP 800-88 Rev 1** (Guidelines for Media Sanitization)
 * **DoD 5220.22-M** (National Industrial Security Program Operating Manual)
 * **ISO/IEC 27040** (Storage Security)
-

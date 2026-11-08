@@ -176,7 +176,7 @@ public class DiskDrillComponents {
     public static final String APP_ICON_PATH_2 = "M 485.4 195.6 L 476.1 190.9 L 380.0 190.9 L 361.4 158.4 L 344.4 139.8 L 333.5 132.0 L 308.7 121.2 L 206.4 119.6 L 203.3 116.5 L 203.3 29.7 L 76.2 159.9 L 59.2 183.2 L 46.8 208.0 L 35.9 251.4 L 34.4 296.3 L 178.5 156.8 L 180.0 158.4 L 178.5 183.2 L 104.1 256.0 L 79.3 294.8 L 65.4 339.7 L 63.8 403.2 L 274.6 198.6 L 294.8 189.4 L 356.8 189.4 L 363.0 192.5 L 367.6 200.2 L 366.0 243.6 L 363.0 245.2 L 322.7 208.0 L 311.8 203.3 L 301.0 203.3 L 282.4 215.7 L 166.1 330.4 L 149.0 353.7 L 136.6 376.9 L 125.8 406.4 L 121.2 428.0 L 119.6 485.4 L 239.0 370.7 L 327.3 370.7 L 333.5 375.4 L 336.6 381.6 L 336.6 386.2 L 328.8 400.2 L 381.6 398.6 L 392.4 392.4 L 400.2 383.1 L 443.6 301.0 L 404.8 313.4 L 299.4 311.8 L 339.7 273.0 L 358.3 265.3 L 420.3 265.3 L 431.2 274.6 L 445.1 297.8 L 488.5 209.5 L 488.5 201.8 Z";
 
     /**
-     * Renders Apple-Grade AEGIS Brand Emblem and Typography using app-icon.svg.
+     * Renders Apple-Grade FORENSIX Brand Emblem and Typography using app-icon.svg.
      * Features a 100% transparent background with only the vector icon visible.
      */
     public static Node createBrandLogo() {
@@ -193,7 +193,7 @@ public class DiskDrillComponents {
         gc.save();
         gc.translate(1.0, 1.0);
         gc.scale(scale, scale);
-        gc.setFill(Color.web("#0071e3")); // Apple Royal Blue
+        gc.setFill(Color.web("#0071e3")); // Royal Blue
         gc.setFillRule(FillRule.EVEN_ODD);
         gc.beginPath();
         gc.appendSVGPath(APP_ICON_PATH_1);
@@ -205,7 +205,7 @@ public class DiskDrillComponents {
         HBox textAndBadge = new HBox(6);
         textAndBadge.setAlignment(Pos.CENTER_LEFT);
 
-        Label brand = new Label("AEGIS");
+        Label brand = new Label("FORENSIX");
         brand.setStyle("-fx-font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif; " +
                 "-fx-font-size: 13.5px; -fx-font-weight: 700; -fx-text-fill: #1d1d1f; -fx-letter-spacing: 0.5px;");
 

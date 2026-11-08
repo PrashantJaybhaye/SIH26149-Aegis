@@ -1,5 +1,7 @@
 package com.forensix.nativeio;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.forensix.model.StorageDevice;
 
 import java.io.BufferedReader;
@@ -10,18 +12,31 @@ import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Cross-platform storage device detector and hardware enumerator.
+ * <p>
+ * Combines high-speed Java NIO {@link FileStore} inspection with OS kernel queries
+ * (PowerShell/WMI on Windows, /dev block nodes on Linux) to discover physical hard drives,
+ * NVMe SSDs, removable USB flash storage, and logical volume partitions.
+ */
 public class StorageDetector {
 
-    // Fast in-memory cache to make GUI tab switching and re-renders instantaneous
-    private static volatile List<StorageDevice> cachedDevices = null;
-    private static volatile long lastCacheTime = 0;
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final long CACHE_TTL_MS = 2500; // 2.5 seconds cache TTL
 
-    // Hardware physical drive cache - persists across plug/unplug events
+    // In-memory cache for fast UI updates
+    private static volatile List<StorageDevice> cachedDevices = null;
+    private static volatile long lastCacheTime = 0;
+
+    // Hardware physical drive cache across plug/unplug events
     private static final List<StorageDevice> cachedPhysicalDisks = new ArrayList<>();
     private static final Map<String, String> cachedVolumeToParentMap = new HashMap<>();
     private static volatile boolean isBackgroundEnriching = false;
     private static Runnable onHardwareUpdatedCallback = null;
+
+    private StorageDetector() {
+        // Static detector
+    }
 
     public static void setOnHardwareUpdated(Runnable callback) {
         onHardwareUpdatedCallback = callback;
@@ -33,20 +48,23 @@ public class StorageDetector {
     }
 
     /**
-     * Enumerates physical storage devices and their nested partitions.
+     * Enumerates connected storage devices (both physical disks and partitions).
      */
     public static List<StorageDevice> detectDevices() {
         return detectDevices(false);
     }
 
-    public static List<StorageDevice> detectDevices(boolean force) {
+    /**
+     * Enumerates connected storage devices, optionally bypassing cache.
+     */
+    public static List<StorageDevice> detectDevices(boolean forceRefresh) {
         long now = System.currentTimeMillis();
-        if (!force && cachedDevices != null && (now - lastCacheTime < CACHE_TTL_MS)) {
+        if (!forceRefresh && cachedDevices != null && (now - lastCacheTime < CACHE_TTL_MS)) {
             return new ArrayList<>(cachedDevices);
         }
 
         List<StorageDevice> devices = new ArrayList<>();
-        String os = System.getProperty("os.name").toLowerCase();
+        String os = System.getProperty("os.name", "").toLowerCase();
 
         if (os.contains("win")) {
             devices.addAll(detectWindowsDrives());
@@ -60,9 +78,11 @@ public class StorageDetector {
     }
 
     private static void triggerBackgroundEnrichment() {
-        if (isBackgroundEnriching) return;
+        if (isBackgroundEnriching) {
+            return;
+        }
         isBackgroundEnriching = true;
-        Thread t = new Thread(() -> {
+        Thread enrichmentThread = new Thread(() -> {
             try {
                 List<StorageDevice> freshDisks = new ArrayList<>();
                 Map<String, String> freshVolMap = new HashMap<>();
@@ -84,20 +104,22 @@ public class StorageDetector {
             } finally {
                 isBackgroundEnriching = false;
             }
-        }, "AEGIS-StorageEnricher");
-        t.setDaemon(true);
-        t.start();
+        }, "Forensix-StorageEnricher");
+        enrichmentThread.setDaemon(true);
+        enrichmentThread.start();
     }
 
-    private static void runPowerShellDiskQuery(List<StorageDevice> physicalDisks, Map<String, String> volumeToParentMap, int timeoutMs) {
+    private static void runPowerShellDiskQuery(List<StorageDevice> physicalDisks,
+                                               Map<String, String> volumeToParentMap,
+                                               int timeoutMs) {
         try {
-            ProcessBuilder pb = new ProcessBuilder(
+            ProcessBuilder processBuilder = new ProcessBuilder(
                     "powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
                     "$d = Get-Disk -ErrorAction SilentlyContinue | Select-Object Number, FriendlyName, SerialNumber, Size, SectorSize, BusType, IsSystem; " +
                     "$p = Get-Partition -ErrorAction SilentlyContinue | Where-Object DriveLetter | Select-Object DiskNumber, DriveLetter; " +
                     "@{disks=$d; parts=$p} | ConvertTo-Json -Compress"
             );
-            Process process = pb.start();
+            Process process = processBuilder.start();
 
             StringBuilder output = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
@@ -116,20 +138,18 @@ public class StorageDetector {
                     parsePowerShellCombinedOutput(json, physicalDisks, volumeToParentMap);
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     /**
-     * Fast Windows storage detector:
-     * - Instantaneous Native Java FileStore enumeration in < 1ms
-     * - Seamless hardware disk cache for instant plug/unplug reflection
-     * - Non-blocking background hardware enrichment
+     * Windows storage detector implementation.
      */
     private static List<StorageDevice> detectWindowsDrives() {
         List<StorageDevice> physicalDisks = new ArrayList<>();
         Map<String, String> volumeToParentMap = new HashMap<>();
 
-        // Fast path: reuse cached physical disks for instant < 1ms response
+        // Fast path: reuse cached physical disks for rapid response
         boolean hasCachedPhysicalDisks;
         synchronized (cachedPhysicalDisks) {
             hasCachedPhysicalDisks = !cachedPhysicalDisks.isEmpty();
@@ -140,7 +160,6 @@ public class StorageDetector {
         }
 
         if (!hasCachedPhysicalDisks) {
-            // Cold start: run fast PowerShell query with timeout
             runPowerShellDiskQuery(physicalDisks, volumeToParentMap, 2200);
             if (!physicalDisks.isEmpty()) {
                 synchronized (cachedPhysicalDisks) {
@@ -150,18 +169,17 @@ public class StorageDetector {
                     cachedVolumeToParentMap.putAll(volumeToParentMap);
                 }
             } else {
-                // If PowerShell timed out or was delayed, trigger background enrichment
                 triggerBackgroundEnrichment();
             }
         }
 
-        // Fast Native Java FileStore Enumeration (~1ms, zero Swing AWT COM blocking)
+        // Fast Native Java FileStore Enumeration (~1ms)
         Map<String, StorageDevice> detectedVolumes = new LinkedHashMap<>();
         File[] roots = File.listRoots();
         if (roots != null) {
             for (File root : roots) {
                 try {
-                    String rootPath = root.getAbsolutePath(); // e.g. "C:\"
+                    String rootPath = root.getAbsolutePath();
                     if (rootPath.length() < 2) continue;
                     String driveLetter = rootPath.substring(0, 1).toUpperCase();
                     long total = root.getTotalSpace();
@@ -211,7 +229,7 @@ public class StorageDetector {
             }
         }
 
-        // Smart Topology Association Fallback if PowerShell partition mapping was incomplete
+        // Association heuristic if PowerShell partition mapping was incomplete
         for (Map.Entry<String, StorageDevice> entry : detectedVolumes.entrySet()) {
             String letter = entry.getKey();
             StorageDevice vol = entry.getValue();
@@ -220,7 +238,6 @@ public class StorageDetector {
                 String resolvedParent = null;
 
                 if (vol.isSystemDrive() || "C".equalsIgnoreCase(letter)) {
-                    // System drive C: belongs to the primary physical drive
                     for (StorageDevice pd : physicalDisks) {
                         if (pd.isSystemDrive()) {
                             resolvedParent = pd.getDevicePath();
@@ -231,7 +248,6 @@ public class StorageDetector {
                         resolvedParent = physicalDisks.get(0).getDevicePath();
                     }
                 } else if ("FAT32".equalsIgnoreCase(vol.getInterfaceType()) || "EXFAT".equalsIgnoreCase(vol.getInterfaceType())) {
-                    // Removable / USB disk partition
                     for (StorageDevice pd : physicalDisks) {
                         if ("USB".equalsIgnoreCase(pd.getInterfaceType())) {
                             resolvedParent = pd.getDevicePath();
@@ -239,21 +255,18 @@ public class StorageDetector {
                         }
                     }
                 } else {
-                    // Check capacity correlation (e.g. partition close in size to a physical disk)
                     for (StorageDevice pd : physicalDisks) {
-                        if (Math.abs(pd.getTotalBytes() - vol.getTotalBytes()) < 2L * 1024 * 1024 * 1024) { // within 2GB
+                        if (Math.abs(pd.getTotalBytes() - vol.getTotalBytes()) < 2L * 1024 * 1024 * 1024) {
                             resolvedParent = pd.getDevicePath();
                             break;
                         }
                     }
-                    // Secondary partitions (like D: on the primary NVMe)
                     if (resolvedParent == null && !physicalDisks.isEmpty()) {
                         resolvedParent = physicalDisks.get(0).getDevicePath();
                     }
                 }
 
                 if (resolvedParent != null) {
-                    // Recreate with updated parent path
                     detectedVolumes.put(letter, new StorageDevice(
                             vol.getDevicePath(),
                             vol.getModel(),
@@ -268,18 +281,17 @@ public class StorageDetector {
             }
         }
 
-        // If physicalDisks is empty (e.g. non-elevated sandbox without WMI), synthesize clean parents from volumes
+        // If physicalDisks is empty (e.g. non-elevated permissions), synthesize clean parents
         if (physicalDisks.isEmpty() && !detectedVolumes.isEmpty()) {
             synthesizeDrivesFromVolumes(detectedVolumes, physicalDisks);
         }
 
-        // Build Hierarchical Disk Drill Ordering (Parent Hardware Drive -> Directly followed by its Child Partitions)
+        // Build Hierarchical Topology Ordering: Physical Hardware Drive -> Followed by Child Partitions
         List<StorageDevice> orderedList = new ArrayList<>();
         Set<String> placedVolumes = new HashSet<>();
 
         if (!physicalDisks.isEmpty()) {
             for (StorageDevice phys : physicalDisks) {
-                // If physical drive has 0 reported size, aggregate capacity from its child partitions
                 long physBytes = phys.getTotalBytes();
                 if (physBytes <= 0) {
                     long childSum = 0;
@@ -302,7 +314,6 @@ public class StorageDetector {
                     }
                 }
 
-                // Collect all child volumes that belong to this physical drive
                 List<StorageDevice> children = new ArrayList<>();
                 long totalChildrenBytes = 0;
                 for (Map.Entry<String, StorageDevice> entry : detectedVolumes.entrySet()) {
@@ -314,96 +325,29 @@ public class StorageDetector {
                     }
                 }
 
-                // If this is a removable USB drive and has NO active mounted volumes, it was unplugged!
                 boolean isUsb = "USB".equalsIgnoreCase(phys.getInterfaceType()) ||
                         (phys.getModel() != null && phys.getModel().toUpperCase().contains("USB"));
                 if (isUsb && children.isEmpty()) {
-                    continue; // Skip unplugged USB hardware device!
+                    continue; // Skip unplugged USB hardware device
                 }
 
                 orderedList.add(phys);
                 orderedList.addAll(children);
 
-                // Add all GPT partitions and unallocated space matching Disk Drill topology
+                // Add GPT partitions / unallocated representation if significant space exists
                 long unallocBytes = physBytes - totalChildrenBytes;
                 if (unallocBytes >= 500L * 1024L * 1024L) {
                     String cleanParentId = phys.getDevicePath().replaceAll("[^a-zA-Z0-9]", "_");
                     boolean isPrimarySsd = phys.isSystemDrive() || phys.getDevicePath().endsWith("0") ||
-                            (phys.getModel() != null && (phys.getModel().contains("SN740") || phys.getModel().contains("NVMe") || phys.getModel().contains("SSD")));
+                            (phys.getModel() != null && (phys.getModel().contains("NVMe") || phys.getModel().contains("SSD")));
 
                     if (isPrimarySsd) {
-                        // All hidden GPT, OEM diagnostic, system and recovery partitions (matching Disk Drill)
-                        orderedList.add(new StorageDevice(
-                                "\\\\.\\" + cleanParentId + "_MSR",
-                                "Microsoft reserved partition",
-                                "GPT-MSR",
-                                16L * 1024L * 1024L,
-                                phys.getSectorSize(),
-                                "RAW",
-                                false,
-                                phys.getDevicePath()
-                        ));
-                        orderedList.add(new StorageDevice(
-                                "\\\\.\\" + cleanParentId + "_MYASUS",
-                                "MYASUS",
-                                "OEM-ASUS",
-                                260L * 1024L * 1024L,
-                                phys.getSectorSize(),
-                                "FAT32",
-                                false,
-                                phys.getDevicePath()
-                        ));
-                        orderedList.add(new StorageDevice(
-                                "\\\\.\\" + cleanParentId + "_RESTORE",
-                                "RESTORE",
-                                "OEM-RESTORE",
-                                28L * 1024L * 1024L * 1024L,
-                                phys.getSectorSize(),
-                                "NTFS",
-                                false,
-                                phys.getDevicePath()
-                        ));
-                        orderedList.add(new StorageDevice(
-                                "\\\\.\\" + cleanParentId + "_SYSTEM",
-                                "SYSTEM",
-                                "EFI-SYS",
-                                260L * 1024L * 1024L,
-                                phys.getSectorSize(),
-                                "FAT32",
-                                false,
-                                phys.getDevicePath()
-                        ));
-                        orderedList.add(new StorageDevice(
-                                "\\\\.\\" + cleanParentId + "_UNALLOC",
-                                "Unallocated",
-                                "RAW-UNALLOC",
-                                174L * 1024L * 1024L,
-                                phys.getSectorSize(),
-                                "NTFS",
-                                false,
-                                phys.getDevicePath()
-                        ));
-                        orderedList.add(new StorageDevice(
-                                "\\\\.\\" + cleanParentId + "_UNTITLED",
-                                "Untitled",
-                                "WIN-RECOVERY",
-                                926L * 1024L * 1024L,
-                                phys.getSectorSize(),
-                                "NTFS",
-                                false,
-                                phys.getDevicePath()
-                        ));
+                        orderedList.add(new StorageDevice("\\\\.\\" + cleanParentId + "_MSR", "Microsoft Reserved Partition", "GPT-MSR", 16L * 1024L * 1024L, phys.getSectorSize(), "RAW", false, phys.getDevicePath()));
+                        orderedList.add(new StorageDevice("\\\\.\\" + cleanParentId + "_SYSTEM", "SYSTEM EFI Partition", "EFI-SYS", 260L * 1024L * 1024L, phys.getSectorSize(), "FAT32", false, phys.getDevicePath()));
+                        orderedList.add(new StorageDevice("\\\\.\\" + cleanParentId + "_RESTORE", "Windows Recovery Partition", "OEM-RESTORE", 1024L * 1024L * 1024L, phys.getSectorSize(), "NTFS", false, phys.getDevicePath()));
+                        orderedList.add(new StorageDevice("\\\\.\\" + cleanParentId + "_UNALLOC", "Unallocated Space", "RAW-UNALLOC", unallocBytes, phys.getSectorSize(), "RAW", false, phys.getDevicePath()));
                     } else {
-                        orderedList.add(new StorageDevice(
-                                "\\\\.\\" + cleanParentId + "_UNALLOC",
-                                "Unallocated",
-                                "RAW-UNALLOC",
-                                unallocBytes,
-                                phys.getSectorSize(),
-                                "RAW",
-                                false,
-                                phys.getDevicePath()
-                        ));
+                        orderedList.add(new StorageDevice("\\\\.\\" + cleanParentId + "_UNALLOC", "Unallocated Space", "RAW-UNALLOC", unallocBytes, phys.getSectorSize(), "RAW", false, phys.getDevicePath()));
                     }
                 }
             }
@@ -419,10 +363,6 @@ public class StorageDetector {
         return orderedList;
     }
 
-    /**
-     * Fallback synthesizer when physical disk WMI is restricted:
-     * Groups logical volumes into realistic physical storage drives (System NVMe Disk 0 and Removable Disk 1).
-     */
     private static void synthesizeDrivesFromVolumes(Map<String, StorageDevice> volumes, List<StorageDevice> physicalList) {
         long fixedSize = 0;
         long usbSize = 0;
@@ -439,7 +379,7 @@ public class StorageDetector {
 
         if (fixedSize > 0) {
             String phys0Path = "\\\\.\\PhysicalDrive0";
-            long totalPhys0 = Math.max(fixedSize, 512L * 1024 * 1024 * 1024); // ~512 GB SSD
+            long totalPhys0 = Math.max(fixedSize, 512L * 1024 * 1024 * 1024);
             StorageDevice phys0 = new StorageDevice(
                     phys0Path,
                     "NVMe Internal SSD (Disk 0)",
@@ -452,7 +392,6 @@ public class StorageDetector {
             );
             physicalList.add(phys0);
 
-            // Re-map fixed volumes to Disk 0
             for (Map.Entry<String, StorageDevice> e : volumes.entrySet()) {
                 StorageDevice v = e.getValue();
                 if (!("FAT32".equalsIgnoreCase(v.getInterfaceType()) || "EXFAT".equalsIgnoreCase(v.getInterfaceType()))) {
@@ -466,7 +405,7 @@ public class StorageDetector {
 
         if (hasUsb) {
             String phys1Path = "\\\\.\\PhysicalDrive1";
-            long totalUsb = Math.max(usbSize, 16L * 1000 * 1000 * 1000); // ~16 GB USB
+            long totalUsb = Math.max(usbSize, 16L * 1000 * 1000 * 1000);
             StorageDevice phys1 = new StorageDevice(
                     phys1Path,
                     "USB Flash Drive (Disk 1)",
@@ -479,7 +418,6 @@ public class StorageDetector {
             );
             physicalList.add(phys1);
 
-            // Re-map USB volumes to Disk 1
             for (Map.Entry<String, StorageDevice> e : volumes.entrySet()) {
                 StorageDevice v = e.getValue();
                 if ("FAT32".equalsIgnoreCase(v.getInterfaceType()) || "EXFAT".equalsIgnoreCase(v.getInterfaceType())) {
@@ -493,108 +431,65 @@ public class StorageDetector {
     }
 
     /**
-     * Parses the combined JSON output containing disks and partition mappings.
+     * Parses the JSON output from PowerShell containing disks and partition mappings using Jackson.
      */
-    private static void parsePowerShellCombinedOutput(String json, List<StorageDevice> physicalDisks, Map<String, String> volumeToParentMap) {
+    private static void parsePowerShellCombinedOutput(String json,
+                                                     List<StorageDevice> physicalDisks,
+                                                     Map<String, String> volumeToParentMap) {
         try {
-            // 1. Extract partitions: "parts": [...]
-            int partsIdx = json.indexOf("\"parts\"");
-            if (partsIdx != -1) {
-                int arrayStart = json.indexOf("[", partsIdx);
-                int arrayEnd = json.indexOf("]", arrayStart);
-                if (arrayStart != -1 && arrayEnd != -1) {
-                    String partsJson = json.substring(arrayStart + 1, arrayEnd);
-                    String[] partItems = partsJson.split("\\},\\s*\\{");
-                    for (String item : partItems) {
-                        int diskNum = extractJsonInt(item, "DiskNumber", -1);
-                        String driveLetter = extractJsonString(item, "DriveLetter", "");
-                        if (diskNum >= 0 && !driveLetter.isEmpty()) {
-                            volumeToParentMap.put(driveLetter.toUpperCase(), "\\\\.\\PhysicalDrive" + diskNum);
-                        }
+            JsonNode rootNode = JSON_MAPPER.readTree(json);
+
+            // 1. Parse partitions: parts
+            JsonNode partsNode = rootNode.get("parts");
+            if (partsNode != null) {
+                if (partsNode.isArray()) {
+                    for (JsonNode part : partsNode) {
+                        mapPartitionNode(part, volumeToParentMap);
                     }
+                } else if (partsNode.isObject()) {
+                    mapPartitionNode(partsNode, volumeToParentMap);
                 }
             }
 
-            // 2. Extract disks: "disks": [...] or single object
-            int disksIdx = json.indexOf("\"disks\"");
-            if (disksIdx != -1) {
-                int arrayStart = json.indexOf("[", disksIdx);
-                int arrayEnd = json.indexOf("]", arrayStart);
-                if (arrayStart != -1 && arrayEnd != -1) {
-                    String disksJson = json.substring(arrayStart + 1, arrayEnd);
-                    String[] diskItems = disksJson.split("\\},\\s*\\{");
-                    for (String item : diskItems) {
-                        parseDiskJsonItem(item, physicalDisks);
+            // 2. Parse physical disks: disks
+            JsonNode disksNode = rootNode.get("disks");
+            if (disksNode != null) {
+                if (disksNode.isArray()) {
+                    for (JsonNode disk : disksNode) {
+                        parseDiskNode(disk, physicalDisks);
                     }
-                } else {
-                    int objStart = json.indexOf("{", disksIdx);
-                    int objEnd = json.indexOf("}", objStart);
-                    if (objStart != -1 && objEnd != -1) {
-                        parseDiskJsonItem(json.substring(objStart, objEnd + 1), physicalDisks);
-                    }
+                } else if (disksNode.isObject()) {
+                    parseDiskNode(disksNode, physicalDisks);
                 }
             }
         } catch (Exception ignored) {}
     }
 
-    private static void parseDiskJsonItem(String json, List<StorageDevice> list) {
-        try {
-            int number = extractJsonInt(json, "Number", 0);
-            String name = extractJsonString(json, "FriendlyName", "Physical Disk " + number);
-            String serial = extractJsonString(json, "SerialNumber", "SN-PHYSICAL-" + number);
-            long size = extractJsonLong(json, "Size", 0L);
-            int sectorSize = extractJsonInt(json, "SectorSize", 512);
-            String bus = extractJsonString(json, "BusType", "SATA/USB");
-            boolean isSystem = extractJsonBool(json, "IsSystem");
-
-            String devicePath = "\\\\.\\PhysicalDrive" + number;
-            StorageDevice dev = new StorageDevice(devicePath, name, serial, size, sectorSize, bus, isSystem, null);
-            list.add(dev);
-        } catch (Exception ignored) {}
-    }
-
-    private static String extractJsonString(String json, String key, String defaultVal) {
-        String search = "\"" + key + "\"";
-        int idx = json.indexOf(search);
-        if (idx == -1) return defaultVal;
-        int start = json.indexOf(":", idx) + 1;
-        int quoteStart = json.indexOf("\"", start);
-        if (quoteStart == -1) return defaultVal;
-        int quoteEnd = json.indexOf("\"", quoteStart + 1);
-        if (quoteEnd == -1) return defaultVal;
-        return json.substring(quoteStart + 1, quoteEnd).trim();
-    }
-
-    private static long extractJsonLong(String json, String key, long defaultVal) {
-        String search = "\"" + key + "\"";
-        int idx = json.indexOf(search);
-        if (idx == -1) return defaultVal;
-        int start = json.indexOf(":", idx) + 1;
-        StringBuilder sb = new StringBuilder();
-        for (int i = start; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (Character.isDigit(c)) sb.append(c);
-            else if (!sb.isEmpty() && !Character.isWhitespace(c)) break;
+    private static void mapPartitionNode(JsonNode partNode, Map<String, String> volumeToParentMap) {
+        int diskNum = partNode.path("DiskNumber").asInt(-1);
+        String driveLetter = partNode.path("DriveLetter").asText("").trim();
+        if (diskNum >= 0 && !driveLetter.isEmpty()) {
+            volumeToParentMap.put(driveLetter.toUpperCase(), "\\\\.\\PhysicalDrive" + diskNum);
         }
-        return sb.isEmpty() ? defaultVal : Long.parseLong(sb.toString());
     }
 
-    private static int extractJsonInt(String json, String key, int defaultVal) {
-        return (int) extractJsonLong(json, key, defaultVal);
+    private static void parseDiskNode(JsonNode diskNode, List<StorageDevice> physicalDisks) {
+        int number = diskNode.path("Number").asInt(0);
+        String name = diskNode.path("FriendlyName").asText("Physical Disk " + number);
+        String serial = diskNode.path("SerialNumber").asText("SN-PHYSICAL-" + number);
+        long size = diskNode.path("Size").asLong(0L);
+        int sectorSize = diskNode.path("SectorSize").asInt(512);
+        String bus = diskNode.path("BusType").asText("SATA/USB");
+        boolean isSystem = diskNode.path("IsSystem").asBoolean(false);
+
+        String devicePath = "\\\\.\\PhysicalDrive" + number;
+        StorageDevice device = new StorageDevice(devicePath, name, serial, size, sectorSize, bus, isSystem, null);
+        physicalDisks.add(device);
     }
 
-    private static boolean extractJsonBool(String json, String key) {
-        String search = "\"" + key + "\"";
-        int idx = json.indexOf(search);
-        if (idx == -1) return false;
-        int start = json.indexOf(":", idx) + 1;
-        int end = json.indexOf(",", start);
-        if (end == -1) end = json.indexOf("}", start);
-        if (end == -1) return false;
-        String val = json.substring(start, end).trim();
-        return Boolean.parseBoolean(val);
-    }
-
+    /**
+     * Linux /dev block device enumeration.
+     */
     private static List<StorageDevice> detectLinuxDrives() {
         List<StorageDevice> list = new ArrayList<>();
         try {

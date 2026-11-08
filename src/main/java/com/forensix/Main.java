@@ -9,6 +9,7 @@ import com.forensix.model.SanitizationStandard;
 import com.forensix.model.StorageDevice;
 import com.forensix.nativeio.StorageDetector;
 import com.forensix.ui.GuiLauncher;
+import com.forensix.util.FormatUtil;
 import com.forensix.util.HashUtil;
 
 import java.io.File;
@@ -16,6 +17,12 @@ import java.io.FileOutputStream;
 import java.util.List;
 import java.util.Scanner;
 
+/**
+ * Main application entry point for FORENSIX.
+ * <p>
+ * Supports both modern JavaFX Desktop GUI (default) and robust Command-Line Interface (CLI)
+ * with the {@code --cli} switch or as an automatic fallback when running in headless environments.
+ */
 public class Main {
 
     public static void main(String[] args) {
@@ -46,8 +53,8 @@ public class Main {
 
     public static void runCli() {
         System.out.println("=========================================================================================");
-        System.out.println("    AEGIS: Automated Erasure and Guarded Information Suite                          ");
-        System.out.println("    National Technical Research Organisation (NTRO) - SIH26149 Prototype                   ");
+        System.out.println("    FORENSIX: Integrated Secure Data Erasure & Forensic File Recovery Tool               ");
+        System.out.println("    Automated Digital Forensics & Data Sanitization Platform                             ");
         System.out.println("=========================================================================================");
 
         Scanner scanner = new Scanner(System.in);
@@ -91,7 +98,7 @@ public class Main {
                     }).start();
                     break;
                 case "7":
-                    System.out.println("Exiting AEGIS Platform. Stay Secure!");
+                    System.out.println("Exiting FORENSIX Platform. Stay Secure!");
                     return;
                 default:
                     System.out.println("Invalid choice. Please enter a number between 1 and 7.");
@@ -135,8 +142,14 @@ public class Main {
 
                 System.out.print("Select Standard (1: NIST 800-88 Clear, 2: DoD 5220.22-M 3-Pass, 3: Zero Fill): ");
                 String stdChoice = scanner.nextLine().trim();
-                SanitizationStandard std = stdChoice.equals("2") ? SanitizationStandard.DOD_5220_22_M :
-                        (stdChoice.equals("3") ? SanitizationStandard.ZERO_FILL : SanitizationStandard.NIST_800_88_CLEAR);
+                SanitizationStandard std;
+                if ("2".equals(stdChoice)) {
+                    std = SanitizationStandard.DOD_5220_22_M;
+                } else if ("3".equals(stdChoice)) {
+                    std = SanitizationStandard.ZERO_FILL;
+                } else {
+                    std = SanitizationStandard.NIST_800_88_CLEAR;
+                }
 
                 System.out.printf("CONFIRMATION: Are you sure you want to PERMANENTLY WIPE %s using %s? (type 'WIPE' to proceed): ",
                         dev.getDevicePath(), std.getDisplayName());
@@ -177,7 +190,7 @@ public class Main {
     private static void runFileCarving(Scanner scanner) {
         System.out.print("\nEnter path to disk image file or drive (e.g., test_evidence.raw): ");
         String path = scanner.nextLine().trim();
-        
+
         boolean isDeviceHandle = path.startsWith("\\\\.\\") || path.matches("^[a-zA-Z]:\\\\?$");
         if (!isDeviceHandle) {
             File source = new File(path);
@@ -200,14 +213,9 @@ public class Main {
         File outputDir = new File("carved_output");
         System.out.println("\n[MODULE 3] Starting Forensic Magic-Byte File Carving engine...");
         List<CarvedFile> carved = FileCarver.carveDevice(path, outputDir, (phase, curSec, totSec, bytes, total, found, entropy, latest) -> {
-            String scannedStr = (bytes >= 1024L * 1024L * 1024L) ?
-                    String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0)) :
-                    String.format("%.2f MB", bytes / (1024.0 * 1024.0));
-
+            String scannedStr = FormatUtil.formatBytes(bytes);
             if (total > 0 && total != Long.MAX_VALUE) {
-                String totalStr = (total >= 1024L * 1024L * 1024L) ?
-                        String.format("%.2f GB", total / (1024.0 * 1024.0 * 1024.0)) :
-                        String.format("%.2f MB", total / (1024.0 * 1024.0));
+                String totalStr = FormatUtil.formatBytes(total);
                 double pct = Math.min(100.0, (double) bytes / total * 100);
                 System.out.printf("\r[%s] Progress: %.1f%% (%s / %s) | Files Extracted: %d | Entropy: %.4f",
                         phase, pct, scannedStr, totalStr, found, entropy);
@@ -232,7 +240,7 @@ public class Main {
 
     private static void runFullDemo() {
         System.out.println("\n=========================================================================");
-        System.out.println("  RUNNING INTEGRATED DEMONSTRATION & BENCHMARK SUITE                     ");
+        System.out.println("  RUNNING FORENSIX INTEGRATED DEMONSTRATION & BENCHMARK SUITE            ");
         System.out.println("=========================================================================");
 
         try {
@@ -246,7 +254,7 @@ public class Main {
             byte[] jpegFooter = new byte[]{(byte) 0xFF, (byte) 0xD9};
             int jpegOffset = 100 * 512;
             System.arraycopy(jpegHeader, 0, mockDisk, jpegOffset, jpegHeader.length);
-            System.arraycopy("SAMPLE_IMAGE_DATA_BYTES_SIH26149".getBytes(), 0, mockDisk, jpegOffset + 50, 32);
+            System.arraycopy("SAMPLE_IMAGE_DATA_BYTES_FORENSIX".getBytes(), 0, mockDisk, jpegOffset + 50, 32);
             System.arraycopy(jpegFooter, 0, mockDisk, jpegOffset + 1024, jpegFooter.length);
 
             // Embed PDF Header & Footer in Disk Sector 500
@@ -272,17 +280,17 @@ public class Main {
 
             // 3. Perform Sanitization Wiping of Evidence Image (NIST 800-88)
             System.out.println("\n[STEP 3] Wiping Mock Disk Image using NIST SP 800-88 (Purge)...");
-            StorageDevice mockDev = new StorageDevice(mockImage.getAbsolutePath(), "Mock Synthetic Evidence Disk", "SIH-DEMO-001", mockImage.length(), 512, "Synthetic", false);
+            StorageDevice mockDev = new StorageDevice(mockImage.getAbsolutePath(), "Mock Synthetic Evidence Disk", "FORENSIX-DEMO-001", mockImage.length(), 512, "Synthetic", false);
             DriveEraser.sanitizeDrive(mockDev, SanitizationStandard.NIST_800_88_CLEAR, (pass, total, bytes, totalB, entropy, pattern) -> {
-                System.out.printf("\r  [WIPE PROGRESS] Pass %d/%d | Written: %d KB | Buffer Entropy: %.4f bits/byte",
-                        pass, total, bytes / 1024, entropy);
+                System.out.printf("\r  [WIPE PROGRESS] Pass %d/%d | Written: %s | Buffer Entropy: %.4f bits/byte",
+                        pass, total, FormatUtil.formatBytes(bytes), entropy);
             });
 
             // 4. Generate Cryptographic Audit Certificate
             System.out.println("\n\n[STEP 4] Generating Tamper-Evident Forensic Audit Certificate PDF...");
             File reportsDir = new File("reports");
             File pdfCert = ReportGenerator.generateSanitizationCertificate(mockDev, SanitizationStandard.NIST_800_88_CLEAR,
-                    HashUtil.calculateSHA256("FORENSIX_PURGE_SUCCESS".getBytes()), reportsDir);
+                    HashUtil.calculateSHA256("FORENSIX_PURGE_SUCCESS"), reportsDir);
             if (pdfCert != null) {
                 System.out.println("  [CERTIFICATE CREATED] " + pdfCert.getName());
             }

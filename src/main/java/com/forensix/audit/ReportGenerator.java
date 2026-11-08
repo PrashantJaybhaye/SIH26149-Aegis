@@ -3,6 +3,7 @@ package com.forensix.audit;
 import com.forensix.model.CarvedFile;
 import com.forensix.model.SanitizationStandard;
 import com.forensix.model.StorageDevice;
+import com.forensix.util.FormatUtil;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -12,200 +13,152 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 
 import java.io.File;
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * Cryptographic PDF Audit Report and Certificate Generator.
+ * <p>
+ * Generates court-admissible PDF certificates for:
+ * <ul>
+ *   <li>Data Sanitization Operations (verifying NIST SP 800-88 / DoD 5220.22-M overwrite compliance).</li>
+ *   <li>Digital Evidence Recovery Operations (documenting chain of custody and SHA-256 evidence hashes).</li>
+ * </ul>
+ */
 public class ReportGenerator {
 
-    private static void writeLine(PDPageContentStream cs, String label, String value, int y) throws IOException {
-        cs.beginText();
-        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 10);
-        cs.newLineAtOffset(50, y);
-        cs.showText(label);
-        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
-        cs.newLineAtOffset(160, 0);
-        cs.showText(value != null ? value : "N/A");
-        cs.endText();
+    private static final String APP_NAME = "FORENSIX – Integrated Data Erasure & Evidence Recovery Suite";
+    private static final int LEFT_MARGIN = 50;
+
+    private ReportGenerator() {
+        // Utility class
     }
 
     /**
      * Generates a PDF Forensic Sanitization Certificate compliant with NIST 800-88 / DoD standards.
+     *
+     * @param device sanitized storage media
+     * @param standard standard and pass count applied
+     * @param verificationHash verification SHA-256 hash
+     * @param outputDir directory to save certificate PDF
+     * @return generated certificate file or null on failure
      */
     public static File generateSanitizationCertificate(StorageDevice device, SanitizationStandard standard,
                                                        String verificationHash, File outputDir) {
-        File certFile = new File(outputDir, "Sanitization_Certificate_" + System.currentTimeMillis() + ".pdf");
         if (!outputDir.exists()) outputDir.mkdirs();
+        File certFile = new File(outputDir, "Sanitization_Certificate_" + System.currentTimeMillis() + ".pdf");
 
-        PDDocument document = null;
-        PDPageContentStream cs = null;
-        try {
-            document = new PDDocument();
+        try (PDDocument document = new PDDocument()) {
             PDPage page = new PDPage();
             document.addPage(page);
 
-            cs = new PDPageContentStream(document, page);
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 18);
-            cs.newLineAtOffset(50, 750);
-            cs.showText("CERTIFICATE OF DATA SANITIZATION");
-            cs.endText();
+            try (PDPageContentStream cs = new PDPageContentStream(document, page)) {
+                writeReportHeader(cs, "CERTIFICATE OF DATA SANITIZATION", APP_NAME);
 
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE), 10);
-            cs.newLineAtOffset(50, 735);
-            cs.showText("A.E.G.I.S. Automated Erasure & Guarded Information Suite - SIH26149");
-            cs.endText();
+                int y = 690;
+                y = writeProperty(cs, "Date & Timestamp:", FormatUtil.currentTimestamp(), y);
+                y = writeProperty(cs, "Target Device Path:", device != null ? device.getDevicePath() : "N/A", y);
+                y = writeProperty(cs, "Model / Friendly Name:", device != null ? device.getModel() : "Storage Media", y);
+                y = writeProperty(cs, "Hardware Serial Number:", (device != null && device.getSerialNumber() != null) ? device.getSerialNumber() : "N/A", y);
+                y = writeProperty(cs, "Interface / Bus Type:", device != null ? device.getInterfaceType() : "Direct Block IO", y);
+                y = writeProperty(cs, "Total Capacity:", device != null ? (device.getFormattedSize() + " (" + device.getTotalBytes() + " bytes)") : "N/A", y);
 
-            int y = 690;
-            writeLine(cs, "Date & Timestamp:", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), y);
-            y -= 25;
-            writeLine(cs, "Target Device Path:", device != null ? device.getDevicePath() : "N/A", y);
-            y -= 20;
-            writeLine(cs, "Model / Friendly Name:", device != null ? device.getModel() : "Storage Media", y);
-            y -= 20;
-            writeLine(cs, "Hardware Serial Number:", device != null && device.getSerialNumber() != null ? device.getSerialNumber() : "N/A", y);
-            y -= 20;
-            writeLine(cs, "Interface / Bus Type:", device != null ? device.getInterfaceType() : "Direct Block IO", y);
-            y -= 20;
-            writeLine(cs, "Total Capacity:", device != null ? (device.getFormattedSize() + " (" + device.getTotalBytes() + " bytes)") : "N/A", y);
-            y -= 30;
+                y -= 10;
+                y = writeProperty(cs, "Sanitization Standard:", standard.getDisplayName(), y);
+                y = writeProperty(cs, "Pass Count Executed:", standard.getTotalPasses() + " Passes", y);
+                y = writeProperty(cs, "Post-Wipe Entropy Check:", "VERIFIED (0.0000 bits/byte - Zero State)", y);
+                y = writeProperty(cs, "Verification SHA-256:", FormatUtil.truncateHash(verificationHash, 32), y);
 
-            writeLine(cs, "Sanitization Standard:", standard.getDisplayName(), y);
-            y -= 20;
-            writeLine(cs, "Pass Count Executed:", standard.getTotalPasses() + " Passes", y);
-            y -= 20;
-            writeLine(cs, "Post-Wipe Entropy Check:", "VERIFIED (0.0000 bits/byte - Zero State)", y);
-            y -= 20;
-            writeLine(cs, "Verification SHA-256:", verificationHash.substring(0, Math.min(32, verificationHash.length())) + "...", y);
-            y -= 40;
+                y -= 20;
+                writeSectionHeader(cs, "COMPLIANCE VERIFICATION & AUDIT SIGNATURE", y);
+                y -= 20;
 
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12);
-            cs.newLineAtOffset(50, y);
-            cs.showText("COMPLIANCE VERIFICATION & AUDIT SIGNATURE");
-            cs.endText();
-            y -= 20;
-
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 9);
-            cs.newLineAtOffset(50, y);
-            cs.showText("This certificate verifies that all LBAs on the target device have been overwritten in compliance with ");
-            cs.newLineAtOffset(0, -12);
-            cs.showText(standard.getDescription());
-            cs.endText();
-
-            cs.close();
-            cs = null;
+                cs.beginText();
+                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 9);
+                cs.newLineAtOffset(LEFT_MARGIN, y);
+                cs.showText("This certificate verifies that all LBAs on the target device have been overwritten in compliance with ");
+                cs.newLineAtOffset(0, -12);
+                cs.showText(standard.getDescription());
+                cs.endText();
+            }
 
             document.save(certFile);
             System.out.println("[REPORT GENERATED] Forensic Certificate saved to: " + certFile.getAbsolutePath());
             return certFile;
 
         } catch (Exception e) {
-            System.err.println("Error generating PDF certificate: " + e.getMessage());
+            System.err.println("Error generating PDF sanitization certificate: " + e.getMessage());
             return null;
-        } finally {
-            if (cs != null) {
-                try { cs.close(); } catch (Exception ignored) {}
-            }
-            if (document != null) {
-                try { document.close(); } catch (Exception ignored) {}
-            }
         }
     }
 
     /**
      * Generates a PDF Digital Evidence Recovery Certificate and Chain of Custody Report.
+     *
+     * @param device source storage media
+     * @param files list of carved evidence files
+     * @param blockchainBlockHash audit blockchain block hash anchor
+     * @param outputDir directory to save report PDF
+     * @return generated certificate file or null on failure
      */
     public static File generateRecoveryCertificate(StorageDevice device, List<CarvedFile> files,
                                                    String blockchainBlockHash, File outputDir) {
-        File certFile = new File(outputDir, "Evidence_Recovery_Certificate_" + System.currentTimeMillis() + ".pdf");
         if (!outputDir.exists()) outputDir.mkdirs();
+        File certFile = new File(outputDir, "Evidence_Recovery_Certificate_" + System.currentTimeMillis() + ".pdf");
 
-        PDDocument document = null;
-        PDPageContentStream cs = null;
-        try {
-            document = new PDDocument();
+        try (PDDocument document = new PDDocument()) {
             PDPage page = new PDPage();
             document.addPage(page);
 
-            cs = new PDPageContentStream(document, page);
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 18);
-            cs.newLineAtOffset(50, 750);
-            cs.showText("CERTIFICATE OF DIGITAL EVIDENCE RECOVERY");
-            cs.endText();
+            try (PDPageContentStream cs = new PDPageContentStream(document, page)) {
+                writeReportHeader(cs, "CERTIFICATE OF DIGITAL EVIDENCE RECOVERY", APP_NAME);
 
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE), 10);
-            cs.newLineAtOffset(50, 735);
-            cs.showText("A.E.G.I.S. Forensic Evidence Carver & Chain of Custody - SIH26149");
-            cs.endText();
+                int y = 690;
+                y = writeProperty(cs, "Recovery Timestamp:", FormatUtil.currentTimestamp(), y);
+                y = writeProperty(cs, "Source Storage Media:", device != null ? device.getModel() : "Raw Forensic Image", y);
+                y = writeProperty(cs, "Source Device Path:", device != null ? device.getDevicePath() : "Direct Block IO", y);
+                y = writeProperty(cs, "Serial / Hardware ID:", (device != null && device.getSerialNumber() != null) ? device.getSerialNumber() : "N/A", y);
+                y = writeProperty(cs, "Carved File Count:", files.size() + " forensic evidence files", y);
 
-            int y = 690;
-            writeLine(cs, "Recovery Timestamp:", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), y);
-            y -= 25;
-            writeLine(cs, "Source Storage Media:", device != null ? device.getModel() : "Raw Forensic Image", y);
-            y -= 20;
-            writeLine(cs, "Source Device Path:", device != null ? device.getDevicePath() : "Direct Block IO", y);
-            y -= 20;
-            writeLine(cs, "Serial / Hardware ID:", device != null && device.getSerialNumber() != null ? device.getSerialNumber() : "N/A", y);
-            y -= 20;
-            writeLine(cs, "Carved File Count:", files.size() + " forensic evidence files", y);
-            y -= 20;
-            long totalBytes = 0;
-            for (CarvedFile cf : files) totalBytes += cf.getLengthBytes();
-            writeLine(cs, "Total Recovered Volume:", String.format("%.2f MB (%d bytes)", totalBytes / (1024.0 * 1024.0), totalBytes), y);
-            y -= 25;
+                long totalBytes = 0;
+                for (CarvedFile cf : files) totalBytes += cf.getLengthBytes();
+                y = writeProperty(cs, "Total Recovered Volume:", String.format("%s (%d bytes)", FormatUtil.formatBytes(totalBytes), totalBytes), y);
 
-            writeLine(cs, "Carving Methodology:", "Deep Unallocated Sector Signature Match + Footers", y);
-            y -= 20;
-            writeLine(cs, "Blockchain Block Hash:", (blockchainBlockHash != null && blockchainBlockHash.length() > 32)
-                    ? blockchainBlockHash.substring(0, 32) + "..." : "Committed to Audit Ledger", y);
-            y -= 35;
+                y -= 5;
+                y = writeProperty(cs, "Carving Methodology:", "Deep Unallocated Sector Signature Match + Footers", y);
+                y = writeProperty(cs, "Blockchain Block Hash:", FormatUtil.truncateHash(blockchainBlockHash, 32), y);
 
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12);
-            cs.newLineAtOffset(50, y);
-            cs.showText("EXTRACTED EVIDENCE MANIFEST SAMPLE (FIRST 8 ITEMS)");
-            cs.endText();
-            y -= 20;
-
-            int count = 0;
-            for (CarvedFile cf : files) {
-                if (count >= 8) break;
-                String itemLine = String.format("#%03d | %s%s | %s | LBA %d | SHA: %s",
-                        count + 1, cf.getId(), cf.getExtension(), cf.getFormattedSize(),
-                        cf.getStartLba(),
-                        cf.getSha256Hash() != null ? cf.getSha256Hash().substring(0, 16) + "..." : "PENDING");
-                cs.beginText();
-                cs.setFont(new PDType1Font(Standard14Fonts.FontName.COURIER), 8);
-                cs.newLineAtOffset(50, y);
-                cs.showText(itemLine);
-                cs.endText();
                 y -= 15;
-                count++;
+                writeSectionHeader(cs, "EXTRACTED EVIDENCE MANIFEST SAMPLE (FIRST 8 ITEMS)", y);
+                y -= 20;
+
+                int count = 0;
+                for (CarvedFile cf : files) {
+                    if (count >= 8) break;
+                    String itemLine = String.format("#%03d | %s%s | %s | LBA %d | SHA: %s",
+                            count + 1, cf.getId(), cf.getExtension(), cf.getFormattedSize(),
+                            cf.getStartLba(), FormatUtil.truncateHash(cf.getSha256Hash(), 16));
+
+                    cs.beginText();
+                    cs.setFont(new PDType1Font(Standard14Fonts.FontName.COURIER), 8);
+                    cs.newLineAtOffset(LEFT_MARGIN, y);
+                    cs.showText(itemLine);
+                    cs.endText();
+                    y -= 14;
+                    count++;
+                }
+
+                y -= 15;
+                writeSectionHeader(cs, "FORENSIC INTEGRITY ATTESTATION:", y);
+                y -= 14;
+
+                cs.beginText();
+                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8);
+                cs.newLineAtOffset(LEFT_MARGIN, y);
+                cs.showText("All extracted files have been cryptographically hashed and verified against unallocated media boundaries.");
+                cs.newLineAtOffset(0, -10);
+                cs.showText("Chain of custody is permanently anchored in the FORENSIX immutable cryptographic audit ledger.");
+                cs.endText();
             }
-
-            y -= 20;
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 10);
-            cs.newLineAtOffset(50, y);
-            cs.showText("FORENSIC INTEGRITY ATTESTATION:");
-            cs.endText();
-            y -= 14;
-
-            cs.beginText();
-            cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8);
-            cs.newLineAtOffset(50, y);
-            cs.showText("All extracted files have been cryptographically hashed and verified against unallocated media boundaries.");
-            cs.newLineAtOffset(0, -10);
-            cs.showText("Chain of custody is permanently anchored in the A.E.G.I.S. immutable cryptographic audit ledger.");
-            cs.endText();
-
-            cs.close();
-            cs = null;
 
             document.save(certFile);
             System.out.println("[REPORT GENERATED] Recovery Certificate saved to: " + certFile.getAbsolutePath());
@@ -214,13 +167,40 @@ public class ReportGenerator {
         } catch (Exception e) {
             System.err.println("Error generating recovery PDF certificate: " + e.getMessage());
             return null;
-        } finally {
-            if (cs != null) {
-                try { cs.close(); } catch (Exception ignored) {}
-            }
-            if (document != null) {
-                try { document.close(); } catch (Exception ignored) {}
-            }
         }
+    }
+
+    private static void writeReportHeader(PDPageContentStream cs, String title, String subtitle) throws IOException {
+        cs.beginText();
+        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 18);
+        cs.newLineAtOffset(LEFT_MARGIN, 750);
+        cs.showText(title);
+        cs.endText();
+
+        cs.beginText();
+        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE), 10);
+        cs.newLineAtOffset(LEFT_MARGIN, 735);
+        cs.showText(subtitle);
+        cs.endText();
+    }
+
+    private static int writeProperty(PDPageContentStream cs, String label, String value, int y) throws IOException {
+        cs.beginText();
+        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 10);
+        cs.newLineAtOffset(LEFT_MARGIN, y);
+        cs.showText(label);
+        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+        cs.newLineAtOffset(160, 0);
+        cs.showText(value != null ? value : "N/A");
+        cs.endText();
+        return y - 20;
+    }
+
+    private static void writeSectionHeader(PDPageContentStream cs, String title, int y) throws IOException {
+        cs.beginText();
+        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12);
+        cs.newLineAtOffset(LEFT_MARGIN, y);
+        cs.showText(title);
+        cs.endText();
     }
 }

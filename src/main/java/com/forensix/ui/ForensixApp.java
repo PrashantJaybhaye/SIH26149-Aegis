@@ -9,6 +9,7 @@ import com.forensix.model.CarvedFile;
 import com.forensix.model.SanitizationStandard;
 import com.forensix.model.StorageDevice;
 import com.forensix.nativeio.StorageDetector;
+import com.forensix.util.FormatUtil;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -205,7 +206,7 @@ public class ForensixApp extends Application {
     @Override
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
-        primaryStage.setTitle("AEGIS - Automated Erasure and Guarded Information Suite");
+        primaryStage.setTitle("FORENSIX - Integrated Secure Data Erasure & File Recovery Tool");
 
         // Application Icon across multiple resolutions (16x16 up to 256x256) derived from app-icon.svg
         try {
@@ -283,7 +284,7 @@ public class ForensixApp extends Application {
 
         primaryStage.show();
 
-        log("[SYSTEM] AEGIS (Automated Erasure and Guarded Information Suite) initialized with Win32 IOCTL Direct Block Engine.");
+        log("[SYSTEM] FORENSIX initialized with Win32 IOCTL Direct Block Engine.");
         refreshStorageDevices();
         refreshReports();
         startDeviceHotplugWatcher();
@@ -447,11 +448,11 @@ public class ForensixApp extends Application {
 
     private void showHelpDocumentationDialog() {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("AEGIS Documentation");
-        alert.setHeaderText("AEGIS - Automated Erasure and Guarded Information Suite");
-        alert.setContentText("AEGIS implements direct low-level block I/O with NIST SP 800-88 Rev. 1 compliance, cryptographic sanitization, and deep signature recovery.\n\n" +
+        alert.setTitle("FORENSIX Documentation");
+        alert.setHeaderText("FORENSIX - Integrated Data Erasure & File Recovery Tool");
+        alert.setContentText("FORENSIX implements direct low-level block I/O with NIST SP 800-88 Rev. 1 compliance, cryptographic sanitization, and deep signature recovery.\n\n" +
                 "• Step 1: Select Storage Device or Attach Raw Disk Image\n" +
-                "• Step 2: High-speed Raw Stream Carving & Shannon Entropy\n" +
+                "• Step 2: High-speed Raw Stream Carving & Shannon Entropy Waveform\n" +
                 "• Step 3: Deep Evidence Manifest Inspection & Preview\n" +
                 "• Step 4: Cryptographic SHA-256 Audit & Blockchain Attestation");
         alert.showAndWait();
@@ -1548,9 +1549,7 @@ public class ForensixApp extends Application {
             }
         }
 
-        String szStr = selectedBytes >= 1024 * 1024 ?
-                String.format("%.2f MB", selectedBytes / (1024.0 * 1024.0)) :
-                String.format("%.2f KB", selectedBytes / 1024.0);
+        String szStr = FormatUtil.formatBytes(selectedBytes);
 
         bottomSelectionStatsLabel.setText(selectedCount + " file(s) selected (" + szStr + ") of " + filteredCarvedFileList.size() + " total");
     }
@@ -1830,7 +1829,7 @@ public class ForensixApp extends Application {
             File f = chooser.showOpenDialog(null);
             if (f != null) {
                 txtShredFilePath.setText(f.getAbsolutePath());
-                lblShredFileSize.setText("File Size: " + (f.length() / 1024) + " KB (" + f.length() + " bytes)");
+                lblShredFileSize.setText("File Size: " + FormatUtil.formatBytes(f.length()) + " (" + f.length() + " bytes)");
                 long slack = ((f.length() + 4095) / 4096 * 4096) - f.length();
                 lblShredSlackEstimate.setText("Calculated Cluster Slack Space: " + slack + " bytes of residual slack to be scrubbed");
             }
@@ -2288,7 +2287,7 @@ public class ForensixApp extends Application {
         colName.setCellValueFactory(f -> new SimpleStringProperty(f.getValue().getName()));
 
         TableColumn<File, String> colSize = new TableColumn<>("File Size");
-        colSize.setCellValueFactory(f -> new SimpleStringProperty(String.format("%.2f KB", f.getValue().length() / 1024.0)));
+        colSize.setCellValueFactory(f -> new SimpleStringProperty(FormatUtil.formatBytes(f.getValue().length())));
 
         TableColumn<File, String> colDate = new TableColumn<>("Generated Timestamp");
         colDate.setCellValueFactory(f -> new SimpleStringProperty(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(f.getValue().lastModified()))));
@@ -2399,7 +2398,7 @@ public class ForensixApp extends Application {
         card.getChildren().addAll(targetRow, new Separator(), grid);
 
         // Forensic Safety Explanation
-        Label notice = new Label("AEGIS will scan raw unallocated sectors in-memory using Win32 IOCTL direct block streaming. " +
+        Label notice = new Label("FORENSIX will scan raw unallocated sectors in-memory using Win32 IOCTL direct block streaming. " +
                 "Zero bytes will be written or modified on the source media.");
         notice.setStyle("-fx-font-size: 11px; -fx-text-fill: #64748b; -fx-wrap-text: true; -fx-line-spacing: 2px;");
 
@@ -2513,9 +2512,7 @@ public class ForensixApp extends Application {
                         scanProgressBar.setProgress(pct);
                         scanPhaseBadge.setText("\u25CF " + currentPhaseText.toUpperCase());
 
-                        String scannedStr = (bytesScanned >= 1024L * 1024L * 1024L) ?
-                                String.format("%.2f GB", bytesScanned / (1024.0 * 1024.0 * 1024.0)) :
-                                String.format("%.1f MB", bytesScanned / (1024.0 * 1024.0));
+                        String scannedStr = FormatUtil.formatBytes(bytesScanned);
 
                         scanHeaderSubtitle.setText(String.format("%.1f%% complete \u2014 %d files / %s \u2022 %s elapsed",
                                 pct * 100, filesFound, scannedStr, finalElapsed));
@@ -2649,7 +2646,7 @@ public class ForensixApp extends Application {
 
         long totalSize = 0;
         for (CarvedFile cf : selectedFiles) totalSize += cf.getLengthBytes();
-        String sz = totalSize >= 1024 * 1024 ? String.format("%.2f MB", totalSize / (1024.0 * 1024.0)) : String.format("%.2f KB", totalSize / 1024.0);
+        String sz = FormatUtil.formatBytes(totalSize);
 
         // 4. Transition to Step 4 Success Screen
         showSuccessScreen("Data recovery complete",
@@ -2927,7 +2924,7 @@ public class ForensixApp extends Application {
                     break;
                 } catch (Exception ignored) {}
             }
-        }, "AEGIS-HotplugWatcher");
+        }, "Forensix-HotplugWatcher");
         deviceHotplugWatcher.setDaemon(true);
         deviceHotplugWatcher.start();
     }
@@ -3019,7 +3016,7 @@ public class ForensixApp extends Application {
             log("[ERROR] Storage device refresh failed: " + task.getException());
         });
 
-        Thread th = new Thread(task, "AEGIS-DeviceRefreshTask");
+        Thread th = new Thread(task, "Forensix-DeviceRefreshTask");
         th.setDaemon(true);
         th.start();
     }

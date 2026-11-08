@@ -1,5 +1,5 @@
 @echo off
-title AEGIS - Automated Erasure and Guarded Information Suite
+title FORENSIX - Integrated Secure Data Erasure and File Recovery Tool
 
 cd /d "%~dp0"
 
@@ -18,7 +18,7 @@ echo [OK] Running with Administrator Privileges (Raw Block IOCTL enabled).
 :start_app
 echo.
 echo =========================================================================
-echo    AEGIS: Automated Erasure and Guarded Information Suite
+echo    FORENSIX: Integrated Secure Data Erasure and File Recovery Tool
 echo =========================================================================
 echo.
 

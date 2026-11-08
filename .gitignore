@@ -41,4 +41,6 @@ build/
 ### Custom / Generated ###
 reports/
 carved_evidence/
+carved_output/
+test_evidence.raw
 Gui inspiration-refenrece
