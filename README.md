@@ -1,4 +1,4 @@
-# FORENSIX: Integrated Secure Data Erasure & Advanced Forensic File Recovery Tool
+# AEGIS: Automated Erasure & Guarded Information Suite
 
 **Smart India Hackathon 2026 (SIH26149)**
 * **Organization:** National Technical Research Organisation (NTRO)
@@ -9,9 +9,9 @@
 
 ## 📌 Executive Summary
 
-**FORENSIX** is a unified digital forensics and cybersecurity platform that integrates **Secure Hardware & Logical Data Sanitization** with **Advanced Forensic File Carving & Recovery**.
+**AEGIS** is a unified digital forensics and cybersecurity platform that integrates **Secure Hardware & Logical Data Sanitization** with **Advanced Forensic File Carving & Recovery**.
 
-Existing tools force cybersecurity teams and law enforcement agencies to use separate, fragmented software for wiping (e.g., DBAN, Blancco) and recovery (e.g., Autopsy, Scalpel, PhotoRec). **FORENSIX** unifies both capabilities into a single environment built specifically for the **National Technical Research Organisation (NTRO)** under **SIH 2026 (SIH26149)**.
+Existing tools force cybersecurity teams and law enforcement agencies to use separate, fragmented software for wiping (e.g., DBAN, Blancco) and recovery (e.g., Autopsy, Scalpel, PhotoRec). **AEGIS** unifies both capabilities into a single environment built specifically for the **National Technical Research Organisation (NTRO)** under **SIH 2026 (SIH26149)**.
 
 ---
 
@@ -40,11 +40,13 @@ Existing tools force cybersecurity teams and law enforcement agencies to use sep
 ## 🏗️ Solution Architecture & Module Structure
 
 ```
-com.forensix/
+com.aegis/
 ├── Main.java                    ← Unified application entry point (GUI / CLI fallback)
 ├── ui/
-│   ├── ForensixApp.java         ← JavaFX Desktop Application & Disk Drill 4-Step Flow
-│   ├── DiskDrillComponents.java ← Vector Hardware Disk, Category Cards & Success Badges
+│   ├── AegisApp.java            ← JavaFX Desktop Application & 4-Step Forensic Workflow
+│   ├── AegisUiComponents.java   ← Vector Hardware Disks, Category Cards & Real-Time Waveform
+│   ├── AegisDialogs.java        ← Standardized modal confirmations, safety notices & prompts
+│   ├── ResizeHelper.java        ← Frameless window edge resizing & drag handlers
 │   └── GuiLauncher.java         ← Standard classpath bootstrap launcher
 ├── blockchain/
 │   └── AuditBlockchain.java     ← Module 5: SHA-256 Chained Cryptographic Audit Ledger
@@ -76,24 +78,25 @@ com.forensix/
 * **Block-Level Wiping:** Overwrites entire physical drives or disk images sequentially across LBAs.
 * **Standards Supported:** NIST SP 800-88 Rev 1 (Clear & Purge), DoD 5220.22-M (3-pass), Gutmann Lite (7-pass), Zero-fill, Random-fill.
 * **Real-Time Shannon Entropy:** Measures buffer entropy ($0.0$ bits = pure zero fill, $8.0$ bits = random) live during wiping and executes a verification pass to confirm zero residual readable data.
-* **System Drive Protection Lock:** Hardcoded protection guards prevent accidental selection/wiping of OS system drives.
+* **OS Drive Protection Safety Lock:** Hardware lock prevents users from accidentally selecting and overwriting the boot drive (e.g., `C:`).
 
-### Module 2: Secure File & Slack Space Eraser (`FileEraser.java`)
-* **Selective File Deletion:** Multi-pass overwrite of targeted files.
-* **Slack Space Scrubbing:** Zeroes out residual leftover bytes in cluster boundaries (e.g., 500-byte file in a 4096-byte cluster leaves 3596 bytes of slack space).
-* **Metadata & Timestamp Destruction:** Resets file modification/creation times to Epoch 1970 and scrambles file names prior to deletion to destroy MFT/Inode entry traces.
+### Module 2: Selective File & Slack Space Eraser (`FileEraser.java`)
+* **Targeted File Destruction:** Overwrites specific sensitive files using multi-pass patterns before unlinking them from the file system.
+* **Cluster Slack Space Wiping:** Scans unallocated bytes left at the tail end of allocated disk clusters (RAM slack & drive slack) and zeroes them out, preventing residual payload recovery.
 
-### Module 3: Advanced File Carving (`FileCarver.java` & `FileSignature.java`)
-* **Filesystem-Less Recovery:** Extracts deleted files directly from raw disk sectors by scanning for magic bytes (`JPEG`, `PNG`, `PDF`, `ZIP/DOCX`).
-* **Overlapping Sector Buffers:** 4096-byte buffer overlap prevents missing file signatures split across chunk boundaries.
-* **Confidence Scoring & Hashing:** Evaluates structural validity (0–100% score) and computes a SHA-256 hash for forensic chain-of-custody.
+### Module 3: Advanced Raw Sector File Carver (`FileCarver.java`)
+* **Filesystem-Agnostic Extraction:** Recovers deleted files from raw unallocated disk sectors using magic byte header/trailer analysis without relying on MFT, FAT, or ext4 metadata tables.
+* **Chunk Overlap Architecture:** Uses a 1 MB read buffer with a 4,096-byte overlap window to ensure signatures crossing buffer boundaries are never missed.
+* **Signature Catalog (`FileSignature.java`):** Supports JPEG, PNG, MP4, AVI, MP3, WAV, PDF, ZIP, 7Z, and SQLite DB files.
+* **False Positive Rejection:** Validates structural integrity (e.g., PDF trailer markers, JPEG EXIF/SOS headers) and calculates cryptographic SHA-256 hashes for chain of custody.
 
-### Module 4: Cryptographic Audit & Reporting (`ReportGenerator.java`)
-* **Court-Ready PDF Certificates:** Exports PDF certificates detailing device model, serial number, sanitization standard used, pass counts, SHA-256 hashes, and entropy verification results.
+### Module 4: Forensic Audit PDF Generator (`ReportGenerator.java`)
+* **Tamper-Evident Certificates:** Generates cryptographic PDF certificates documenting media serial numbers, wiping standards, pass counts, starting/ending timestamps, and pre/post-wipe Shannon entropy.
+* **Court-Admissible Chain of Custody:** Includes digital verification hashes and investigator attestation sections.
 
-### Module 5: Immutable Audit Blockchain (`AuditBlockchain.java`)
-* **Tamper-Evident Ledger:** Maintains a SHA-256 hash-chained block ledger recording every sanitization, file shredding, and carving event.
-* **Integrity Verification:** Instant cryptographic verification of chain state and parent block linkages.
+### Module 5: Immutable Cryptographic Blockchain Ledger (`AuditBlockchain.java`)
+* **Proof of Sanitization:** Every wipe or recovery operation is committed as an immutable block in a local SHA-256 chained Merkle ledger (`reports/aegis_audit_blockchain.json`).
+* **Cryptographic Tamper Detection:** Verifies block hashes and previous-block links on startup to detect any post-incident tampering.
 
 ---
 
@@ -106,18 +109,17 @@ com.forensix/
 
 ---
 
-### ⚡ Method 1: One-Click Quick Run (Windows)
+### ⚡ Method 1: Single Unified Launcher (`run.bat`)
 
-The simplest way to run the platform is using the included launcher scripts:
+The simplest way to run AEGIS is using the included unified launcher:
 
-* **Desktop Application (JavaFX GUI):**  
-  Double-click **`run.bat`** or **`run-gui.bat`**  
-  *(Opens the modern desktop GUI with real-time graphs and tables).*
-* **Terminal Dashboard (CLI Mode):**  
-  Double-click **`run-cli.bat`**  
-  *(Opens the interactive numbered terminal menu).*
+```powershell
+.\run.bat           # Prompts for GUI or CLI mode (defaults to GUI after timeout)
+.\run.bat --gui     # Directly launches Desktop JavaFX GUI
+.\run.bat --cli     # Directly launches Forensic Interactive CLI
+```
 
-> *Both scripts feature automatic UAC self-elevation (`-Verb RunAs`): when launched, Windows prompts for Administrator permission to unlock raw block IOCTL device access and auto-detects Maven.*
+> *The script features automatic UAC self-elevation (`-Verb RunAs`): when launched, Windows prompts for Administrator permission to unlock raw block IOCTL device access and auto-detects Maven and Java.*
 
 ---
 
@@ -127,7 +129,7 @@ The simplest way to run the platform is using the included launcher scripts:
 2. Select **File > Open...** and choose the `d:\Project\Forensix` folder.
 3. Wait for IntelliJ to sync the Maven project dependencies (`pom.xml`).
 4. Navigate to:  
-   `src/main/java/com/forensix/Main.java`
+   `src/main/java/com/aegis/Main.java`
 5. Click the green **Run (▶)** arrow next to `public static void main(String[] args)` or press `Shift + F10`.
 6. Use the built-in terminal/Run console to interact with the menu.
 
@@ -141,8 +143,11 @@ Open Command Prompt or PowerShell in the project directory:
 # 1. Clean and compile the source code
 mvn clean compile
 
-# 2. Launch the interactive FORENSIX platform
-mvn exec:java -Dexec.mainClass="com.forensix.Main"
+# 2. Launch AEGIS GUI
+mvn exec:java -Dexec.mainClass="com.aegis.ui.GuiLauncher"
+
+# 3. Or launch AEGIS CLI
+mvn exec:java -Dexec.mainClass="com.aegis.Main" -Dexec.args="--cli"
 ```
 
 ---
