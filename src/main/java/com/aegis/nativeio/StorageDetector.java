@@ -550,8 +550,8 @@ public class StorageDetector {
 
     private static void indexVolumeNode(JsonNode volNode, Map<Long, String> labelBySize, Map<Long, String> fsBySize) {
         long size = volNode.path("Size").asLong(0L);
-        String label = volNode.path("FileSystemLabel").asText("").trim();
-        String fs = volNode.path("FileSystem").asText("").trim();
+        String label = volNode.path("FileSystemLabel").asText().trim();
+        String fs = volNode.path("FileSystem").asText().trim();
         if (size > 0) {
             if (!label.isEmpty()) labelBySize.put(size, label);
             if (!fs.isEmpty()) fsBySize.put(size, fs);
@@ -565,10 +565,10 @@ public class StorageDetector {
                                            Map<Long, String> fsBySize) {
         int diskNum = partNode.path("DiskNumber").asInt(-1);
         int partNum = partNode.path("PartitionNumber").asInt(1);
-        String driveLetter = partNode.path("DriveLetter").asText("").trim();
+        String driveLetter = partNode.path("DriveLetter").asText().trim();
         long size = partNode.path("Size").asLong(0L);
-        String type = partNode.path("Type").asText("").trim();
-        String gptType = partNode.path("GptType").asText("").trim();
+        String type = partNode.path("Type").asText().trim();
+        String gptType = partNode.path("GptType").asText().trim();
 
         if (diskNum < 0) return;
         String parentPath = "\\\\.\\PhysicalDrive" + diskNum;
@@ -615,11 +615,11 @@ public class StorageDetector {
 
     private static void parseDiskNode(JsonNode diskNode, List<StorageDevice> physicalDisks) {
         int number = diskNode.path("Number").asInt(0);
-        String name = diskNode.path("FriendlyName").asText("").trim();
-        String serial = diskNode.path("SerialNumber").asText("").trim();
+        String name = diskNode.path("FriendlyName").asText().trim();
+        String serial = diskNode.path("SerialNumber").asText().trim();
         long size = diskNode.path("Size").asLong(0L);
         int sectorSize = diskNode.path("SectorSize").asInt(512);
-        String bus = diskNode.path("BusType").asText("").trim();
+        String bus = diskNode.path("BusType").asText().trim();
         boolean isSystem = diskNode.path("IsSystem").asBoolean(false);
 
         // Reject empty or degraded disk nodes from failed or restricted CIM calls
