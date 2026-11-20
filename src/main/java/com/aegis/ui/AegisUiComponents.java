@@ -249,6 +249,27 @@ public class AegisUiComponents {
         return c.snapshot(sp, null);
     }
 
+    /**
+     * Creates a large, elegant AEGIS emblem in subtle faded light grey for empty states.
+     */
+    public static Node createFadedAegisEmblem(double size) {
+        Canvas c = new Canvas(size, size);
+        GraphicsContext gc = c.getGraphicsContext2D();
+
+        double scale = size / 512.0;
+        gc.save();
+        gc.scale(scale, scale);
+        gc.setFill(Color.web("#cbd5e1"));
+        gc.setFillRule(FillRule.EVEN_ODD);
+        gc.beginPath();
+        gc.appendSVGPath(APP_ICON_PATH_1);
+        gc.appendSVGPath(APP_ICON_PATH_2);
+        gc.fill();
+        gc.restore();
+        c.setOpacity(0.55);
+        return c;
+    }
+
     public static Node createVectorBookIcon(double size) {
         Canvas c = new Canvas(size, size);
         GraphicsContext gc = c.getGraphicsContext2D();
@@ -430,21 +451,33 @@ public class AegisUiComponents {
     public static Button createVectorChevronButton(boolean isDown, Runnable onToggle) {
         Button btn = new Button();
         btn.setFocusTraversable(false);
-        final double size = 12.0;
+        btn.getStyleClass().add("chevron-button");
+        final double size = 11.0;
 
         Node normalIcon = drawChevronCanvas(isDown, size, Color.web("#64748b"));
-        Node hoverIcon = drawChevronCanvas(isDown, size, Color.web("#0071e3"));
+        Node hoverIcon = drawChevronCanvas(isDown, size, Color.web("#1e293b")); // Dark grey / black
 
         btn.setGraphic(normalIcon);
-        btn.setStyle("-fx-background-color: transparent; -fx-padding: 3 4; -fx-cursor: hand; -fx-background-radius: 4;");
+        btn.setStyle("-fx-background-color: transparent; -fx-border-color: transparent; -fx-border-width: 0; " +
+                "-fx-focus-color: transparent; -fx-faint-focus: transparent; -fx-padding: 3; -fx-cursor: hand; -fx-background-radius: 999;");
 
         btn.setOnMouseEntered(e -> {
             btn.setGraphic(hoverIcon);
-            btn.setStyle("-fx-background-color: rgba(0, 113, 227, 0.10); -fx-padding: 3 4; -fx-cursor: hand; -fx-background-radius: 4;");
+            btn.setStyle("-fx-background-color: rgba(0, 0, 0, 0.07); -fx-border-color: transparent; -fx-border-width: 0; " +
+                    "-fx-focus-color: transparent; -fx-faint-focus: transparent; -fx-padding: 3; -fx-cursor: hand; -fx-background-radius: 999;");
         });
         btn.setOnMouseExited(e -> {
             btn.setGraphic(normalIcon);
-            btn.setStyle("-fx-background-color: transparent; -fx-padding: 3 4; -fx-cursor: hand; -fx-background-radius: 4;");
+            btn.setStyle("-fx-background-color: transparent; -fx-border-color: transparent; -fx-border-width: 0; " +
+                    "-fx-focus-color: transparent; -fx-faint-focus: transparent; -fx-padding: 3; -fx-cursor: hand; -fx-background-radius: 999;");
+        });
+        btn.setOnMousePressed(e -> {
+            btn.setStyle("-fx-background-color: rgba(0, 0, 0, 0.14); -fx-border-color: transparent; -fx-border-width: 0; " +
+                    "-fx-focus-color: transparent; -fx-faint-focus: transparent; -fx-padding: 3; -fx-cursor: hand; -fx-background-radius: 999;");
+        });
+        btn.setOnMouseReleased(e -> {
+            btn.setStyle("-fx-background-color: rgba(0, 0, 0, 0.07); -fx-border-color: transparent; -fx-border-width: 0; " +
+                    "-fx-focus-color: transparent; -fx-faint-focus: transparent; -fx-padding: 3; -fx-cursor: hand; -fx-background-radius: 999;");
         });
 
         if (onToggle != null) {

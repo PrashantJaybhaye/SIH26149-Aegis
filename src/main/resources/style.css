@@ -109,6 +109,9 @@
 .terminal-text-area {
     -fx-control-inner-background: #050811;
     -fx-background-color: #050811;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
     -fx-text-fill: #e2e8f0;
     -fx-font-family: 'SF Mono', 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
     -fx-font-size: 11.5px;
@@ -117,6 +120,35 @@
 }
 .terminal-text-area .content {
     -fx-background-color: #050811;
+    -fx-background-insets: 0;
+}
+.terminal-text-area:focused {
+    -fx-background-color: #050811;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+}
+.terminal-text-area .scroll-pane {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+}
+
+/* Chevron Toggle Button - Clean flat aesthetic, no square border */
+.chevron-button {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-focus-color: transparent;
+    -fx-faint-focus: transparent;
+}
+.chevron-button:focused {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-focus-color: transparent;
+    -fx-faint-focus: transparent;
 }
 
 /* Center alignment for status and protection badge column */
