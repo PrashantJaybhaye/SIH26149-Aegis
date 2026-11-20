@@ -1,4 +1,4 @@
-# AEGIS: Automated Erasure & Guarded Information Suite
+# AEGIS: Active Erasure & Guarded Information Suite
 
 **Smart India Hackathon 2026 (SIH26149)**
 * **Organization:** National Technical Research Organisation (NTRO)

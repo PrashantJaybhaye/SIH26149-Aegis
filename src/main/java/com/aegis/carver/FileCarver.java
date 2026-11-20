@@ -187,7 +187,10 @@ public class FileCarver {
                                     listener.onProgress(currentPhase, startLba, totalSectors,
                                             currentPosition + i, totalBytes, fileCount, chunkEntropy, carved);
                                 }
-                                i += Math.min(carved.getLengthBytes(), 1024);
+                                long sectorsToSkip = carved.getLengthBytes() / SECTOR_SIZE;
+                                if (sectorsToSkip > 1) {
+                                    i += (int) (sectorsToSkip - 1) * SECTOR_SIZE;
+                                }
                             }
                         }
                     }

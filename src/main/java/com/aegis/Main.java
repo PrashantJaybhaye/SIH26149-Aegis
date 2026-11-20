@@ -53,7 +53,7 @@ public class Main {
 
     public static void runCli() {
         System.out.println("=========================================================================================");
-        System.out.println("    AEGIS: Integrated Secure Data Erasure & Forensic File Recovery Tool               ");
+        System.out.println("    AEGIS: Active Erasure & Guarded Information Suite                             ");
         System.out.println("    Automated Digital Forensics & Data Sanitization Platform                             ");
         System.out.println("=========================================================================================");
 

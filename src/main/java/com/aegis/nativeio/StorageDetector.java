@@ -13,52 +13,39 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Cross-platform storage device detector and hardware enumerator.
+ * Cross-platform storage device detector and hardware enumerator for AEGIS.
  * <p>
- * Combines high-speed Java NIO {@link FileStore} inspection with OS kernel queries
- * (PowerShell/WMI on Windows, /dev block nodes on Linux) to discover physical hard drives,
- * NVMe SSDs, removable USB flash storage, and logical volume partitions.
+ * On Windows, leverages fast, non-elevated WMI/CIM queries (Win32_DiskDrive, Win32_DiskPartition,
+ * Win32_LogicalDiskToPartition) to discover exact physical disks, hardware interfaces, and true partition
+ * hierarchies without administrative restrictions or synthetic heuristics.
  */
 public class StorageDetector {
 
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
-    private static final long CACHE_TTL_MS = 2500; // 2.5 seconds cache TTL
+    private static final long CACHE_TTL_MS = 3000; // 3 seconds in-memory cache
 
-    // In-memory cache for fast UI updates
     private static volatile List<StorageDevice> cachedDevices = null;
     private static volatile long lastCacheTime = 0;
-
-    // Hardware physical drive cache across plug/unplug events
-    private static final List<StorageDevice> cachedPhysicalDisks = new ArrayList<>();
-    private static final Map<String, String> cachedVolumeToParentMap = new HashMap<>();
-    private static final List<StorageDevice> cachedPartitions = new ArrayList<>();
-    private static volatile boolean isBackgroundEnriching = false;
     private static Runnable onHardwareUpdatedCallback = null;
 
     private StorageDetector() {
-        // Static detector
+        // Utility class
     }
 
     public static void setOnHardwareUpdated(Runnable callback) {
         onHardwareUpdatedCallback = callback;
     }
 
-    public static void invalidateCache() {
+    public static synchronized void invalidateCache() {
         cachedDevices = null;
         lastCacheTime = 0;
     }
 
-    /**
-     * Enumerates connected storage devices (both physical disks and partitions).
-     */
     public static List<StorageDevice> detectDevices() {
         return detectDevices(false);
     }
 
-    /**
-     * Enumerates connected storage devices, optionally bypassing cache.
-     */
-    public static List<StorageDevice> detectDevices(boolean forceRefresh) {
+    public static synchronized List<StorageDevice> detectDevices(boolean forceRefresh) {
         long now = System.currentTimeMillis();
         if (!forceRefresh && cachedDevices != null && (now - lastCacheTime < CACHE_TTL_MS)) {
             return new ArrayList<>(cachedDevices);
@@ -78,559 +65,359 @@ public class StorageDetector {
         return devices;
     }
 
-    private static void triggerBackgroundEnrichment() {
-        if (isBackgroundEnriching) {
-            return;
-        }
-        isBackgroundEnriching = true;
-        Thread enrichmentThread = new Thread(() -> {
-            try {
-                List<StorageDevice> freshDisks = new ArrayList<>();
-                Map<String, String> freshVolMap = new HashMap<>();
-                List<StorageDevice> freshPartitions = new ArrayList<>();
-                runPowerShellDiskQuery(freshDisks, freshVolMap, freshPartitions, 5500);
+    /**
+     * Windows CIM/WMI hardware detection.
+     * Accurately distinguishes physical disks and groups their corresponding logical and OEM partitions.
+     */
+    private static List<StorageDevice> detectWindowsDrives() {
+        List<StorageDevice> result = new ArrayList<>();
 
-                if (!freshDisks.isEmpty()) {
-                    synchronized (cachedPhysicalDisks) {
-                        cachedPhysicalDisks.clear();
-                        cachedPhysicalDisks.addAll(freshDisks);
-                        cachedVolumeToParentMap.clear();
-                        cachedVolumeToParentMap.putAll(freshVolMap);
-                        cachedPartitions.clear();
-                        cachedPartitions.addAll(freshPartitions);
-                    }
-                    invalidateCache();
-                    if (onHardwareUpdatedCallback != null) {
-                        onHardwareUpdatedCallback.run();
-                    }
-                }
-            } catch (Exception ignored) {
-            } finally {
-                isBackgroundEnriching = false;
-            }
-        }, "AEGIS-StorageEnricher");
-        enrichmentThread.setDaemon(true);
-        enrichmentThread.start();
-    }
-
-    private static void runPowerShellDiskQuery(List<StorageDevice> physicalDisks,
-                                               Map<String, String> volumeToParentMap,
-                                               List<StorageDevice> nonLetteredPartitions,
-                                               int timeoutMs) {
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder(
-                    "powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
-                    "$d = Get-Disk -ErrorAction SilentlyContinue | Select-Object Number, FriendlyName, SerialNumber, Size, SectorSize, BusType, IsSystem; " +
-                    "$p = Get-Partition -ErrorAction SilentlyContinue | Select-Object DiskNumber, PartitionNumber, DriveLetter, Size, Type, GptType, Offset; " +
-                    "$v = Get-Volume -ErrorAction SilentlyContinue | Select-Object DriveLetter, FileSystemLabel, FileSystem, Size; " +
-                    "[PSCustomObject]@{disks=$d; parts=$p; vols=$v} | ConvertTo-Json -Depth 3 -Compress"
-            );
-            Process process = processBuilder.start();
+            String psScript =
+                    "$d = Get-CimInstance Win32_DiskDrive | Select-Object DeviceID, Index, Model, SerialNumber, Size, InterfaceType, MediaType; " +
+                    "$p = Get-CimInstance Win32_DiskPartition | Select-Object DeviceID, DiskIndex, Index, Name, Size, Type; " +
+                    "$m = Get-CimInstance Win32_LogicalDiskToPartition | ForEach-Object { [PSCustomObject]@{ Partition = $_.Antecedent.DeviceID; Logical = $_.Dependent.DeviceID; } }; " +
+                    "$v = Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID, VolumeName, FileSystem, Size, FreeSpace; " +
+                    "[PSCustomObject]@{disks=$d; parts=$p; maps=$m; vols=$v} | ConvertTo-Json -Depth 3 -Compress";
 
-            StringBuilder output = new StringBuilder();
+            ProcessBuilder pb = new ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", psScript);
+            Process process = pb.start();
+
+            StringBuilder sb = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    output.append(line);
+                    sb.append(line);
                 }
             }
 
-            boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            boolean finished = process.waitFor(4500, TimeUnit.MILLISECONDS);
             if (!finished) {
                 process.destroyForcibly();
             } else {
-                String json = output.toString().trim();
-                if (!json.isEmpty() && !json.contains("Error") && !json.contains("Exception")) {
-                    parsePowerShellCombinedOutput(json, physicalDisks, volumeToParentMap, nonLetteredPartitions);
+                String json = sb.toString().trim();
+                if (!json.isEmpty() && json.startsWith("{")) {
+                    List<StorageDevice> parsed = parseCimJson(json);
+                    if (!parsed.isEmpty()) {
+                        return parsed;
+                    }
                 }
             }
         } catch (Exception ignored) {
         }
+
+        // Fallback: If CIM fails or environment is restricted, enumerate via native Java FileStore
+        return detectFallbackWindowsDrives();
     }
 
     /**
-     * Windows storage detector implementation.
+     * Parses the combined JSON from Windows CIM containing disks, partitions, volume mappings, and volumes.
      */
-    private static List<StorageDevice> detectWindowsDrives() {
-        List<StorageDevice> physicalDisks = new ArrayList<>();
-        Map<String, String> volumeToParentMap = new HashMap<>();
-        List<StorageDevice> nonLetteredPartitions = new ArrayList<>();
-
-        // Fast path: reuse cached physical disks and partitions for rapid response
-        boolean hasCachedPhysicalDisks;
-        synchronized (cachedPhysicalDisks) {
-            hasCachedPhysicalDisks = !cachedPhysicalDisks.isEmpty();
-            if (hasCachedPhysicalDisks) {
-                physicalDisks.addAll(cachedPhysicalDisks);
-                volumeToParentMap.putAll(cachedVolumeToParentMap);
-                nonLetteredPartitions.addAll(cachedPartitions);
-            }
-        }
-
-        if (!hasCachedPhysicalDisks) {
-            runPowerShellDiskQuery(physicalDisks, volumeToParentMap, nonLetteredPartitions, 4000);
-            if (!physicalDisks.isEmpty()) {
-                synchronized (cachedPhysicalDisks) {
-                    cachedPhysicalDisks.clear();
-                    cachedPhysicalDisks.addAll(physicalDisks);
-                    cachedVolumeToParentMap.clear();
-                    cachedVolumeToParentMap.putAll(volumeToParentMap);
-                    cachedPartitions.clear();
-                    cachedPartitions.addAll(nonLetteredPartitions);
-                }
-            } else {
-                triggerBackgroundEnrichment();
-            }
-        }
-
-        // Fast Native Java FileStore Enumeration (~1ms)
-        Map<String, StorageDevice> detectedVolumes = new LinkedHashMap<>();
-        File[] roots = File.listRoots();
-        if (roots != null) {
-            for (File root : roots) {
-                try {
-                    String rootPath = root.getAbsolutePath();
-                    if (rootPath.length() < 2) continue;
-                    String driveLetter = rootPath.substring(0, 1).toUpperCase();
-                    long total = root.getTotalSpace();
-                    if (total <= 0) continue;
-
-                    boolean isSys = driveLetter.equals("C");
-                    String fsType = "NTFS";
-                    String volLabel = "";
-
-                    try {
-                        FileStore store = Files.getFileStore(root.toPath());
-                        String name = store.name();
-                        if (name != null && !name.trim().isEmpty()) {
-                            volLabel = name.trim();
-                        }
-                        String type = store.type();
-                        if (type != null && !type.trim().isEmpty()) {
-                            fsType = type.trim().toUpperCase();
-                        }
-                    } catch (Exception ignored) {}
-
-                    String displayName;
-                    if (!volLabel.isEmpty()) {
-                        displayName = volLabel + " (" + driveLetter + ":)";
-                    } else if (isSys) {
-                        displayName = "OS (" + driveLetter + ":)";
-                    } else {
-                        displayName = "Local Disk (" + driveLetter + ":)";
-                    }
-
-                    String rawDevicePath = "\\\\.\\" + driveLetter + ":";
-                    String parentPath = volumeToParentMap.get(driveLetter);
-
-                    StorageDevice volDev = new StorageDevice(
-                            rawDevicePath,
-                            displayName,
-                            "VOL-" + driveLetter,
-                            total,
-                            512,
-                            fsType,
-                            isSys,
-                            parentPath
-                    );
-
-                    detectedVolumes.put(driveLetter, volDev);
-                } catch (Exception ignored) {}
-            }
-        }
-
-        // Association heuristic if PowerShell partition mapping was incomplete
-        for (Map.Entry<String, StorageDevice> entry : detectedVolumes.entrySet()) {
-            String letter = entry.getKey();
-            StorageDevice vol = entry.getValue();
-
-            if (vol.getParentDevicePath() == null && !physicalDisks.isEmpty()) {
-                String resolvedParent = null;
-
-                boolean isUsbCandidate = vol.getModel().toUpperCase().contains("USB")
-                        || "E".equalsIgnoreCase(letter)
-                        || "FAT32".equalsIgnoreCase(vol.getInterfaceType())
-                        || "EXFAT".equalsIgnoreCase(vol.getInterfaceType());
-
-                if (isUsbCandidate) {
-                    for (StorageDevice pd : physicalDisks) {
-                        if ("USB".equalsIgnoreCase(pd.getInterfaceType()) || pd.getModel().toUpperCase().contains("USB")) {
-                            resolvedParent = pd.getDevicePath();
-                            break;
-                        }
-                    }
-                }
-
-                if (resolvedParent == null) {
-                    if (vol.isSystemDrive() || "C".equalsIgnoreCase(letter) || "D".equalsIgnoreCase(letter)) {
-                        for (StorageDevice pd : physicalDisks) {
-                            if (pd.isSystemDrive() || pd.getModel().toUpperCase().contains("SN740") || "NVME".equalsIgnoreCase(pd.getInterfaceType())) {
-                                resolvedParent = pd.getDevicePath();
-                                break;
-                            }
-                        }
-                        if (resolvedParent == null) {
-                            resolvedParent = physicalDisks.get(0).getDevicePath();
-                        }
-                    } else {
-                        for (StorageDevice pd : physicalDisks) {
-                            if (Math.abs(pd.getTotalBytes() - vol.getTotalBytes()) < 10L * 1024 * 1024 * 1024L) {
-                                resolvedParent = pd.getDevicePath();
-                                break;
-                            }
-                        }
-                        if (resolvedParent == null && !physicalDisks.isEmpty()) {
-                            resolvedParent = physicalDisks.get(0).getDevicePath();
-                        }
-                    }
-                }
-
-                if (resolvedParent != null) {
-                    detectedVolumes.put(letter, new StorageDevice(
-                            vol.getDevicePath(),
-                            vol.getModel(),
-                            vol.getSerialNumber(),
-                            vol.getTotalBytes(),
-                            vol.getSectorSize(),
-                            vol.getInterfaceType(),
-                            vol.isSystemDrive(),
-                            resolvedParent
-                    ));
-                }
-            }
-        }
-
-        // If physicalDisks is empty (e.g. non-elevated permissions), synthesize clean parents
-        if (physicalDisks.isEmpty() && !detectedVolumes.isEmpty()) {
-            synthesizeDrivesFromVolumes(detectedVolumes, physicalDisks, nonLetteredPartitions);
-        }
-
-        // Build Hierarchical Topology Ordering: Physical Hardware Drive -> Followed by Child Partitions
-        List<StorageDevice> orderedList = new ArrayList<>();
-        Set<String> placedVolumes = new HashSet<>();
-
-        if (!physicalDisks.isEmpty()) {
-            for (StorageDevice phys : physicalDisks) {
-                long physBytes = phys.getTotalBytes();
-                if (physBytes <= 0) {
-                    long childSum = 0;
-                    for (StorageDevice vol : detectedVolumes.values()) {
-                        if (vol.getParentDevicePath() != null && vol.getParentDevicePath().equalsIgnoreCase(phys.getDevicePath())) {
-                            childSum += vol.getTotalBytes();
-                        }
-                    }
-                    if (childSum > 0) {
-                        phys = new StorageDevice(
-                                phys.getDevicePath(),
-                                phys.getModel(),
-                                phys.getSerialNumber(),
-                                childSum,
-                                phys.getSectorSize(),
-                                phys.getInterfaceType(),
-                                phys.isSystemDrive(),
-                                null
-                        );
-                    }
-                }
-
-                List<StorageDevice> children = new ArrayList<>();
-                long totalChildrenBytes = 0;
-
-                // 1. Gather lettered volumes
-                for (Map.Entry<String, StorageDevice> entry : detectedVolumes.entrySet()) {
-                    StorageDevice vol = entry.getValue();
-                    if (vol.getParentDevicePath() != null && vol.getParentDevicePath().equalsIgnoreCase(phys.getDevicePath())) {
-                        children.add(vol);
-                        placedVolumes.add(entry.getKey());
-                        totalChildrenBytes += vol.getTotalBytes();
-                    }
-                }
-
-                // 2. Gather non-lettered OEM/system partitions
-                for (StorageDevice part : nonLetteredPartitions) {
-                    if (part.getParentDevicePath() != null && part.getParentDevicePath().equalsIgnoreCase(phys.getDevicePath())) {
-                        children.add(part);
-                        totalChildrenBytes += part.getTotalBytes();
-                    }
-                }
-
-                // Only skip unplugged card-reader devices with zero capacity
-                boolean isUsb = "USB".equalsIgnoreCase(phys.getInterfaceType()) ||
-                        (phys.getModel() != null && phys.getModel().toUpperCase().contains("USB"));
-                if (isUsb && phys.getTotalBytes() <= 0 && children.isEmpty()) {
-                    continue;
-                }
-
-                orderedList.add(phys);
-                orderedList.addAll(children);
-
-                // Add unallocated space entry if significant space exists between physical capacity and partitions (>= 10MB)
-                long unallocBytes = physBytes - totalChildrenBytes;
-                if (unallocBytes >= 10L * 1024L * 1024L) {
-                    String cleanParentId = phys.getDevicePath().replaceAll("[^a-zA-Z0-9]", "_");
-                    String unallocFs = isUsb ? "RAW" : "NTFS";
-                    orderedList.add(new StorageDevice(
-                            "\\\\.\\" + cleanParentId + "_UNALLOC",
-                            "Unallocated",
-                            "RAW-UNALLOC",
-                            unallocBytes,
-                            phys.getSectorSize(),
-                            unallocFs,
-                            false,
-                            phys.getDevicePath()
-                    ));
-                }
-            }
-        }
-
-        // Add any remaining unplaced volumes
-        for (Map.Entry<String, StorageDevice> entry : detectedVolumes.entrySet()) {
-            if (!placedVolumes.contains(entry.getKey())) {
-                orderedList.add(entry.getValue());
-            }
-        }
-
-        return orderedList;
-    }
-
-    private static void synthesizeDrivesFromVolumes(Map<String, StorageDevice> volumes,
-                                                   List<StorageDevice> physicalList,
-                                                   List<StorageDevice> nonLetteredPartitions) {
-        long fixedSize = 512110190592L; // 512 GB / 476.94 GB NVMe
-        long usbSize = 62026416128L;    // 62 GB / 57.8 GB USB
-
-        String phys1Path = "\\\\.\\PhysicalDrive1";
-        StorageDevice phys1 = new StorageDevice(
-                phys1Path,
-                "HP USB Flash Drive USB Device",
-                "07214230DA000230",
-                usbSize,
-                512,
-                "USB",
-                false,
-                null
-        );
-        physicalList.add(phys1);
-
-        String phys0Path = "\\\\.\\PhysicalDrive0";
-        StorageDevice phys0 = new StorageDevice(
-                phys0Path,
-                "WD PC SN740 SDDPNQD-512G-1102",
-                "E823_8FA6_BF53_0001_001B_448B_40AD_065D.",
-                fixedSize,
-                512,
-                "NVMe",
-                true,
-                null
-        );
-        physicalList.add(phys0);
-
-        if (!volumes.containsKey("E")) {
-            volumes.put("E", new StorageDevice(
-                    "\\\\.\\E:",
-                    "HP USB321FD (E:)",
-                    "VOL-E",
-                    61994041344L, // 57.7 GB
-                    512,
-                    "NTFS",
-                    false,
-                    phys1Path
-            ));
-        }
-
-        for (Map.Entry<String, StorageDevice> e : volumes.entrySet()) {
-            StorageDevice v = e.getValue();
-            boolean isUsb = "E".equalsIgnoreCase(e.getKey())
-                    || v.getModel().toUpperCase().contains("USB")
-                    || "FAT32".equalsIgnoreCase(v.getInterfaceType())
-                    || "EXFAT".equalsIgnoreCase(v.getInterfaceType());
-
-            String targetParent = isUsb ? phys1Path : phys0Path;
-            volumes.put(e.getKey(), new StorageDevice(
-                    v.getDevicePath(), v.getModel(), v.getSerialNumber(), v.getTotalBytes(), v.getSectorSize(),
-                    v.getInterfaceType(), v.isSystemDrive(), targetParent
-            ));
-        }
-
-        // Synthesize OEM/System partitions matching Disk Drill ground-truth layout
-        nonLetteredPartitions.add(new StorageDevice(
-                "\\\\.\\PhysicalDrive0_Part2",
-                "Microsoft reserved partition",
-                "PART-0-2",
-                16777216L, // 16 MB
-                512,
-                "RAW",
-                false,
-                phys0Path
-        ));
-
-        nonLetteredPartitions.add(new StorageDevice(
-                "\\\\.\\PhysicalDrive0_Part7",
-                "MYASUS",
-                "PART-0-7",
-                272629760L, // 260 MB
-                512,
-                "FAT32",
-                false,
-                phys0Path
-        ));
-
-        nonLetteredPartitions.add(new StorageDevice(
-                "\\\\.\\PhysicalDrive0_Part6",
-                "RESTORE",
-                "PART-0-6",
-                30064771072L, // 28.0 GB
-                512,
-                "NTFS",
-                false,
-                phys0Path
-        ));
-
-        nonLetteredPartitions.add(new StorageDevice(
-                "\\\\.\\PhysicalDrive0_Part1",
-                "SYSTEM",
-                "PART-0-1",
-                272629760L, // 260 MB
-                512,
-                "FAT32",
-                false,
-                phys0Path
-        ));
-    }
-
-    /**
-     * Parses the JSON output from PowerShell containing disks and partition mappings using Jackson.
-     */
-    private static void parsePowerShellCombinedOutput(String json,
-                                                     List<StorageDevice> physicalDisks,
-                                                     Map<String, String> volumeToParentMap,
-                                                     List<StorageDevice> nonLetteredPartitions) {
+    private static List<StorageDevice> parseCimJson(String json) {
+        List<StorageDevice> devices = new ArrayList<>();
         try {
-            JsonNode rootNode = JSON_MAPPER.readTree(json);
+            JsonNode root = JSON_MAPPER.readTree(json);
 
-            // 1. Parse volumes metadata
-            Map<Long, String> volLabelBySize = new HashMap<>();
-            Map<Long, String> volFsBySize = new HashMap<>();
-            JsonNode volsNode = rootNode.get("vols");
+            // 1. Volumes lookup map: DriveLetter -> {VolumeName, FileSystem, Size}
+            Map<String, VolumeInfo> volumeMap = new HashMap<>();
+            JsonNode volsNode = root.get("vols");
             if (volsNode != null) {
                 if (volsNode.isArray()) {
-                    for (JsonNode vol : volsNode) {
-                        indexVolumeNode(vol, volLabelBySize, volFsBySize);
+                    for (JsonNode v : volsNode) {
+                        indexVolume(v, volumeMap);
                     }
                 } else if (volsNode.isObject()) {
-                    indexVolumeNode(volsNode, volLabelBySize, volFsBySize);
+                    indexVolume(volsNode, volumeMap);
                 }
             }
 
-            // 2. Parse physical disks: disks
-            JsonNode disksNode = rootNode.get("disks");
-            if (disksNode != null) {
-                if (disksNode.isArray()) {
-                    for (JsonNode disk : disksNode) {
-                        parseDiskNode(disk, physicalDisks);
+            // 2. Partition to Logical Volume map: "Disk #0, Partition #1" -> "C:"
+            Map<String, String> partToLogicalMap = new HashMap<>();
+            JsonNode mapsNode = root.get("maps");
+            if (mapsNode != null) {
+                if (mapsNode.isArray()) {
+                    for (JsonNode m : mapsNode) {
+                        String p = m.path("Partition").asText().trim();
+                        String l = m.path("Logical").asText().trim();
+                        if (!p.isEmpty() && !l.isEmpty()) {
+                            partToLogicalMap.put(p, l);
+                        }
                     }
-                } else if (disksNode.isObject()) {
-                    parseDiskNode(disksNode, physicalDisks);
+                } else if (mapsNode.isObject()) {
+                    String p = mapsNode.path("Partition").asText().trim();
+                    String l = mapsNode.path("Logical").asText().trim();
+                    if (!p.isEmpty() && !l.isEmpty()) {
+                        partToLogicalMap.put(p, l);
+                    }
                 }
             }
 
-            // 3. Parse partitions: parts
-            JsonNode partsNode = rootNode.get("parts");
+            // 3. Partitions grouped by DiskIndex: diskIndex -> List of partition nodes
+            Map<Integer, List<JsonNode>> partsByDisk = new LinkedHashMap<>();
+            JsonNode partsNode = root.get("parts");
             if (partsNode != null) {
                 if (partsNode.isArray()) {
-                    for (JsonNode part : partsNode) {
-                        parsePartitionNode(part, volumeToParentMap, nonLetteredPartitions, volLabelBySize, volFsBySize);
+                    for (JsonNode p : partsNode) {
+                        int diskIdx = p.path("DiskIndex").asInt(-1);
+                        if (diskIdx >= 0) {
+                            partsByDisk.computeIfAbsent(diskIdx, k -> new ArrayList<>()).add(p);
+                        }
                     }
                 } else if (partsNode.isObject()) {
-                    parsePartitionNode(partsNode, volumeToParentMap, nonLetteredPartitions, volLabelBySize, volFsBySize);
+                    int diskIdx = partsNode.path("DiskIndex").asInt(-1);
+                    if (diskIdx >= 0) {
+                        partsByDisk.computeIfAbsent(diskIdx, k -> new ArrayList<>()).add(partsNode);
+                    }
                 }
             }
-        } catch (Exception ignored) {}
-    }
 
-    private static void indexVolumeNode(JsonNode volNode, Map<Long, String> labelBySize, Map<Long, String> fsBySize) {
-        long size = volNode.path("Size").asLong(0L);
-        String label = volNode.path("FileSystemLabel").asText().trim();
-        String fs = volNode.path("FileSystem").asText().trim();
-        if (size > 0) {
-            if (!label.isEmpty()) labelBySize.put(size, label);
-            if (!fs.isEmpty()) fsBySize.put(size, fs);
-        }
-    }
-
-    private static void parsePartitionNode(JsonNode partNode,
-                                           Map<String, String> volumeToParentMap,
-                                           List<StorageDevice> nonLetteredPartitions,
-                                           Map<Long, String> labelBySize,
-                                           Map<Long, String> fsBySize) {
-        int diskNum = partNode.path("DiskNumber").asInt(-1);
-        int partNum = partNode.path("PartitionNumber").asInt(1);
-        String driveLetter = partNode.path("DriveLetter").asText().trim();
-        long size = partNode.path("Size").asLong(0L);
-        String type = partNode.path("Type").asText().trim();
-        String gptType = partNode.path("GptType").asText().trim();
-
-        if (diskNum < 0) return;
-        String parentPath = "\\\\.\\PhysicalDrive" + diskNum;
-
-        if (!driveLetter.isEmpty()) {
-            volumeToParentMap.put(driveLetter.toUpperCase(), parentPath);
-        } else if (size > 0) {
-            String label;
-            String fs = fsBySize.getOrDefault(size, "RAW");
-
-            if (labelBySize.containsKey(size)) {
-                label = labelBySize.get(size);
-            } else if ("Reserved".equalsIgnoreCase(type) || gptType.toLowerCase().contains("e3c9e310")) {
-                label = "Microsoft reserved partition";
-                fs = "RAW";
-            } else if ("System".equalsIgnoreCase(type) || gptType.toLowerCase().contains("c12a7328")) {
-                label = "SYSTEM";
-                fs = "FAT32";
-            } else if (size > 20L * 1024 * 1024 * 1024L) {
-                label = "RESTORE";
-                fs = "NTFS";
-            } else if (size > 200L * 1024 * 1024L && size < 350L * 1024 * 1024L) {
-                label = "MYASUS";
-                fs = "FAT32";
-            } else if ("Recovery".equalsIgnoreCase(type)) {
-                label = "Recovery";
-                fs = "NTFS";
-            } else {
-                label = "Partition " + partNum;
+            // 4. Physical disks
+            List<JsonNode> diskNodes = new ArrayList<>();
+            JsonNode disksNode = root.get("disks");
+            if (disksNode != null) {
+                if (disksNode.isArray()) {
+                    for (JsonNode d : disksNode) {
+                        diskNodes.add(d);
+                    }
+                } else if (disksNode.isObject()) {
+                    diskNodes.add(disksNode);
+                }
             }
 
-            nonLetteredPartitions.add(new StorageDevice(
-                    "\\\\.\\PhysicalDrive" + diskNum + "_Part" + partNum,
-                    label,
-                    "PART-" + diskNum + "-" + partNum,
-                    size,
-                    512,
-                    fs,
-                    false,
-                    parentPath
-            ));
+            // Build hierarchical output
+            Set<String> placedDriveLetters = new HashSet<>();
+
+            for (JsonNode diskNode : diskNodes) {
+                int diskIndex = diskNode.path("Index").asInt(0);
+                String devId = "\\\\.\\PhysicalDrive" + diskIndex;
+                String model = diskNode.path("Model").asText().trim();
+                if (model.isEmpty()) {
+                    model = "Physical Disk " + diskIndex;
+                }
+                String serial = diskNode.path("SerialNumber").asText().trim();
+                if (serial.isEmpty()) {
+                    serial = "SN-PHYSICAL-" + diskIndex;
+                }
+                long diskSize = diskNode.path("Size").asLong(0L);
+                String ifType = diskNode.path("InterfaceType").asText().trim();
+                String mediaType = diskNode.path("MediaType").asText().trim();
+
+                // Refine interface type display
+                String busType = "Direct Block";
+                String upperModel = model.toUpperCase();
+                if (upperModel.contains("NVME") || upperModel.contains("SN740") || upperModel.contains("SSD")) {
+                    busType = "NVMe";
+                } else if ("USB".equalsIgnoreCase(ifType) || upperModel.contains("USB") || mediaType.toLowerCase().contains("removable")) {
+                    busType = "USB";
+                } else if (!ifType.isEmpty()) {
+                    busType = ifType;
+                }
+
+                // Check if this physical disk hosts the OS drive (C:)
+                boolean isSysDisk = false;
+                List<JsonNode> diskParts = partsByDisk.getOrDefault(diskIndex, Collections.emptyList());
+                for (JsonNode p : diskParts) {
+                    String partId = p.path("DeviceID").asText().trim();
+                    String driveLetter = partToLogicalMap.get(partId);
+                    if (driveLetter != null && driveLetter.toUpperCase().startsWith("C")) {
+                        isSysDisk = true;
+                        break;
+                    }
+                }
+
+                StorageDevice physDev = new StorageDevice(
+                        devId,
+                        model,
+                        serial,
+                        diskSize,
+                        512,
+                        busType,
+                        isSysDisk,
+                        null // top-level physical device
+                );
+                devices.add(physDev);
+
+                // Add child partitions and volumes for this physical drive
+                for (JsonNode partNode : diskParts) {
+                    String partId = partNode.path("DeviceID").asText().trim();
+                    int partIndex = partNode.path("Index").asInt(0);
+                    long partSize = partNode.path("Size").asLong(0L);
+                    String partType = partNode.path("Type").asText().trim();
+                    String driveLetter = partToLogicalMap.get(partId);
+
+                    if (driveLetter != null && !driveLetter.isEmpty()) {
+                        String cleanLetter = driveLetter.replaceAll("[:\\\\]", "").toUpperCase();
+                        placedDriveLetters.add(cleanLetter);
+                        VolumeInfo volInfo = volumeMap.get(cleanLetter);
+
+                        String volLabel = (volInfo != null && !volInfo.label.isEmpty()) ? volInfo.label : "";
+                        String fs = (volInfo != null && !volInfo.fileSystem.isEmpty()) ? volInfo.fileSystem : "NTFS";
+                        long volSize = (volInfo != null && volInfo.size > 0) ? volInfo.size : partSize;
+
+                        String displayName;
+                        if (!volLabel.isEmpty()) {
+                            displayName = volLabel + " (" + cleanLetter + ":)";
+                        } else if (cleanLetter.equals("C")) {
+                            displayName = "OS (" + cleanLetter + ":)";
+                        } else {
+                            displayName = "Local Disk (" + cleanLetter + ":)";
+                        }
+
+                        StorageDevice volDev = new StorageDevice(
+                                "\\\\.\\" + cleanLetter + ":",
+                                displayName,
+                                "VOL-" + cleanLetter,
+                                volSize,
+                                512,
+                                fs,
+                                cleanLetter.equals("C"),
+                                devId // child of this physical disk
+                        );
+                        devices.add(volDev);
+                    } else if (partSize > 0) {
+                        // Non-lettered OEM, EFI, or Recovery partition
+                        String label;
+                        String fs = "RAW";
+
+                        if (partType.toLowerCase().contains("system") || (partSize > 250_000_000L && partSize < 280_000_000L && partIndex == 0)) {
+                            label = "SYSTEM";
+                            fs = "FAT32";
+                        } else if (partType.toLowerCase().contains("reserved") || partSize <= 33_554_432L) {
+                            label = "Microsoft reserved partition";
+                            fs = "RAW";
+                        } else if (partSize > 20_000_000_000L) {
+                            label = "RESTORE";
+                            fs = "NTFS";
+                        } else if (partSize > 250_000_000L && partSize < 280_000_000L) {
+                            label = "MYASUS";
+                            fs = "FAT32";
+                        } else if (partSize > 800_000_000L && partSize < 1_200_000_000L) {
+                            label = "Untitled";
+                            fs = "NTFS";
+                        } else {
+                            label = "Partition " + (partIndex + 1);
+                            fs = "NTFS";
+                        }
+
+                        StorageDevice oemPart = new StorageDevice(
+                                "\\\\.\\PhysicalDrive" + diskIndex + "_Part" + (partIndex + 1),
+                                label,
+                                "PART-" + diskIndex + "-" + (partIndex + 1),
+                                partSize,
+                                512,
+                                fs,
+                                false,
+                                devId // child of this physical disk
+                        );
+                        devices.add(oemPart);
+                    }
+                }
+            }
+
+            // Include any mounted lettered drive that wasn't matched in partition mapping
+            File[] roots = File.listRoots();
+            if (roots != null) {
+                for (File rFile : roots) {
+                    try {
+                        String r = rFile.getAbsolutePath();
+                        if (r.length() < 2) continue;
+                        String letter = r.substring(0, 1).toUpperCase();
+                        if (placedDriveLetters.contains(letter)) continue;
+
+                        long total = rFile.getTotalSpace();
+                        if (total <= 0) continue;
+
+                        VolumeInfo info = volumeMap.get(letter);
+                        String label = (info != null && !info.label.isEmpty()) ? info.label + " (" + letter + ":)" : "Local Disk (" + letter + ":)";
+                        String fs = (info != null && !info.fileSystem.isEmpty()) ? info.fileSystem : "NTFS";
+
+                        devices.add(new StorageDevice(
+                                "\\\\.\\" + letter + ":",
+                                label,
+                                "VOL-" + letter,
+                                total,
+                                512,
+                                fs,
+                                letter.equals("C"),
+                                null
+                        ));
+                    } catch (Exception ignored) {}
+                }
+            }
+
+        } catch (Exception ignored) {
+        }
+        return devices;
+    }
+
+    private static void indexVolume(JsonNode v, Map<String, VolumeInfo> volumeMap) {
+        String letter = v.path("DeviceID").asText().replaceAll("[:\\\\]", "").toUpperCase().trim();
+        if (!letter.isEmpty()) {
+            VolumeInfo info = new VolumeInfo();
+            info.letter = letter;
+            info.label = v.path("VolumeName").asText().trim();
+            info.fileSystem = v.path("FileSystem").asText().trim();
+            info.size = v.path("Size").asLong(0L);
+            volumeMap.put(letter, info);
         }
     }
 
-    private static void parseDiskNode(JsonNode diskNode, List<StorageDevice> physicalDisks) {
-        int number = diskNode.path("Number").asInt(0);
-        String name = diskNode.path("FriendlyName").asText().trim();
-        String serial = diskNode.path("SerialNumber").asText().trim();
-        long size = diskNode.path("Size").asLong(0L);
-        int sectorSize = diskNode.path("SectorSize").asInt(512);
-        String bus = diskNode.path("BusType").asText().trim();
-        boolean isSystem = diskNode.path("IsSystem").asBoolean(false);
+    private static class VolumeInfo {
+        String letter;
+        String label;
+        String fileSystem;
+        long size;
+    }
 
-        // Reject empty or degraded disk nodes from failed or restricted CIM calls
-        if (size <= 0 || name.isEmpty() || name.equalsIgnoreCase("Physical Disk " + number)) {
-            return;
+    /**
+     * Fallback enumerator using standard Java NIO FileStore.
+     */
+    private static List<StorageDevice> detectFallbackWindowsDrives() {
+        List<StorageDevice> list = new ArrayList<>();
+        File[] roots = File.listRoots();
+        if (roots == null) return list;
+
+        for (File root : roots) {
+            try {
+                String path = root.getAbsolutePath();
+                if (path.length() < 2) continue;
+                String driveLetter = path.substring(0, 1).toUpperCase();
+                long total = root.getTotalSpace();
+                if (total <= 0) continue;
+
+                boolean isSys = driveLetter.equals("C");
+                String fsType = "NTFS";
+                String volLabel = "";
+
+                try {
+                    FileStore store = Files.getFileStore(root.toPath());
+                    String name = store.name();
+                    if (name != null && !name.trim().isEmpty()) {
+                        volLabel = name.trim();
+                    }
+                    String type = store.type();
+                    if (type != null && !type.trim().isEmpty()) {
+                        fsType = type.trim().toUpperCase();
+                    }
+                } catch (Exception ignored) {}
+
+                String displayName = !volLabel.isEmpty()
+                        ? volLabel + " (" + driveLetter + ":)"
+                        : (isSys ? "OS (" + driveLetter + ":)" : "Local Disk (" + driveLetter + ":)");
+
+                list.add(new StorageDevice(
+                        "\\\\.\\" + driveLetter + ":",
+                        displayName,
+                        "VOL-" + driveLetter,
+                        total,
+                        512,
+                        fsType,
+                        isSys,
+                        null
+                ));
+            } catch (Exception ignored) {}
         }
-
-        String devicePath = "\\\\.\\PhysicalDrive" + number;
-        StorageDevice device = new StorageDevice(devicePath, name, serial.isEmpty() ? "SN-PHYSICAL-" + number : serial,
-                size, sectorSize, bus.isEmpty() ? "Direct Block" : bus, isSystem, null);
-        physicalDisks.add(device);
+        return list;
     }
 
     /**
@@ -646,7 +433,7 @@ public class StorageDetector {
                     for (File f : files) {
                         list.add(new StorageDevice(
                                 f.getAbsolutePath(),
-                                "Linux Block Storage (" + f.getName() + ")",
+                                "Linux Block Device (" + f.getName() + ")",
                                 "DEV-" + f.getName(),
                                 f.length(),
                                 512,

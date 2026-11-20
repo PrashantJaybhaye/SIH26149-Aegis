@@ -49,8 +49,9 @@ public class StorageDevice {
      * Checks if this device represents a top-level physical drive rather than a partition/volume.
      */
     public boolean isPhysical() {
-        return devicePath != null && devicePath.startsWith("\\\\.\\Physical")
-                && parentDevicePath == null && !devicePath.contains("#");
+        return devicePath != null
+                && devicePath.toLowerCase().startsWith("\\\\.\\physicaldrive")
+                && parentDevicePath == null;
     }
 
     /**

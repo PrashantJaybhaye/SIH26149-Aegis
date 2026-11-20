@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title AEGIS - Automated Erasure and Guarded Information Suite
+title AEGIS - Active Erasure and Guarded Information Suite
 
 cd /d "%~dp0"
 
@@ -20,7 +20,7 @@ echo [OK] Running with Administrator Privileges (Hardware IOCTL enabled).
 :start_app
 echo.
 echo =========================================================================
-echo    AEGIS: Automated Erasure and Guarded Information Suite
+echo    AEGIS: Active Erasure and Guarded Information Suite
 echo    Digital Forensics, Block Sanitization ^& Cryptographic Recovery
 echo =========================================================================
 echo.
@@ -54,19 +54,13 @@ if exist "C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2026.2.3\pl
 )
 
 :check_mode
-:: Parse launch mode from argument or prompt user
+:: Parse launch mode from argument or launch Desktop GUI by default
 set "MODE=%~1"
 if /i "%MODE%"=="--cli" goto :launch_cli
 if /i "%MODE%"=="cli" goto :launch_cli
 if /i "%MODE%"=="--gui" goto :launch_gui
 if /i "%MODE%"=="gui" goto :launch_gui
-
-echo Choose Launch Interface:
-echo   [1] Desktop Graphical User Interface (JavaFX GUI) -- Default
-echo   [2] Forensic Interactive Command Line Interface (CLI)
-echo.
-set /p "CHOICE=Enter selection [1/2, default: 1]: "
-if "%CHOICE%"=="2" goto :launch_cli
+goto :launch_gui
 
 :launch_gui
 echo [LAUNCH] Starting AEGIS Desktop GUI Application...

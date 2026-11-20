@@ -54,7 +54,7 @@ public final class AegisDialogs {
     public static void showHelpDocumentationDialog() {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("AEGIS Documentation");
-        alert.setHeaderText("AEGIS - Integrated Data Erasure & File Recovery Tool");
+        alert.setHeaderText("AEGIS - Active Erasure and Guarded Information Suite");
         alert.setContentText("AEGIS implements direct low-level block I/O with NIST SP 800-88 Rev. 1 compliance, cryptographic sanitization, and deep signature recovery.\n\n" +
                 "• Step 1: Select Storage Device or Attach Raw Disk Image\n" +
                 "• Step 2: High-speed Raw Stream Carving & Shannon Entropy Waveform\n" +

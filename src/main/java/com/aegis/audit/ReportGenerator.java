@@ -26,7 +26,7 @@ import java.util.List;
  */
 public class ReportGenerator {
 
-    private static final String APP_NAME = "AEGIS – Integrated Data Erasure & Evidence Recovery Suite";
+    private static final String APP_NAME = "AEGIS – Active Erasure & Guarded Information Suite";
     private static final int LEFT_MARGIN = 50;
 
     private ReportGenerator() {

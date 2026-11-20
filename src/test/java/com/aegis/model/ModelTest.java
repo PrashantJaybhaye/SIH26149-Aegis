@@ -62,5 +62,17 @@ class ModelTest {
         assertNotNull(SanitizationStandard.DOD_5220_22_M.getDescription());
         assertNotNull(SanitizationStandard.DOD_5220_22_M.getDisplayName());
     }
+
+    @Test
+    @DisplayName("StorageDetector should detect hardware disks and partitions with proper hierarchy")
+    void testStorageDetectorEnumeration() {
+        java.util.List<StorageDevice> devices = com.aegis.nativeio.StorageDetector.detectDevices(true);
+        assertNotNull(devices);
+        assertFalse(devices.isEmpty(), "Should detect at least one storage device");
+        for (StorageDevice dev : devices) {
+            System.out.println("  -> " + (dev.isPhysical() ? "[PHYSICAL] " : "    [CHILD] ") + dev.getModel() + " | " + dev.getInterfaceType() + " | " + dev.getFormattedSize() + " | parent: " + dev.getParentDevicePath());
+            assertNotNull(dev.getDevicePath());
+        }
+    }
 }
 

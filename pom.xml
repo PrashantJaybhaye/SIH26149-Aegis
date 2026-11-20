@@ -7,7 +7,7 @@
     <groupId>com.aegis</groupId>
     <artifactId>Aegis</artifactId>
     <version>1.0-SNAPSHOT</version>
-    <name>AEGIS - Automated Erasure and Guarded Information Suite</name>
+    <name>AEGIS - Active Erasure and Guarded Information Suite</name>
     <description>Integrated Secure Data Erasure and Advanced File Recovery Tool for Digital Forensics and Data Sanitization</description>
 
     <properties>

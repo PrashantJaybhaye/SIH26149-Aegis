@@ -95,6 +95,8 @@ public class AegisApp extends Application {
     private Button btnInspectorSanitize;
     private Label propType, propModel, propSerial, propVendor, propProtocol, propRevision, propCapacity, propAvailable, propPhysicalNum, propPartitions;
     private VBox childPartitionsBox;
+    private VBox inspectorContentBox;
+    private VBox inspectorEmptyBox;
 
     // 2. Scanning / Carving View Components
     private VBox scanningViewPane;
@@ -205,7 +207,7 @@ public class AegisApp extends Application {
     @Override
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
-        primaryStage.setTitle("AEGIS - Integrated Secure Data Erasure & File Recovery Tool");
+        primaryStage.setTitle("AEGIS - Active Erasure and Guarded Information Suite");
 
         // Application Icon across multiple resolutions (16x16 up to 256x256) derived from app-icon.svg
         try {
@@ -710,9 +712,10 @@ public class AegisApp extends Application {
         if (drivesTable != null) {
             if (selected != null && deviceList.contains(selected)) {
                 drivesTable.getSelectionModel().select(selected);
-            } else if (!deviceList.isEmpty()) {
-                drivesTable.getSelectionModel().select(0);
-                updateRightInspector(deviceList.get(0));
+                updateRightInspector(selected);
+            } else {
+                drivesTable.getSelectionModel().clearSelection();
+                showInspectorEmptyState();
             }
         }
 
@@ -787,7 +790,17 @@ public class AegisApp extends Application {
 
         // Double-click row on physical disk to expand/collapse child volumes
         drivesTable.setRowFactory(tv -> {
-            TableRow<StorageDevice> row = new TableRow<>();
+            TableRow<StorageDevice> row = new TableRow<>() {
+                @Override
+                protected void updateItem(StorageDevice item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setStyle("-fx-background-color: transparent; -fx-border-color: transparent;");
+                    } else {
+                        setStyle("");
+                    }
+                }
+            };
             row.setOnMouseClicked(event -> {
                 if (event.getClickCount() == 2 && !row.isEmpty()) {
                     StorageDevice rowDev = row.getItem();
@@ -797,6 +810,13 @@ public class AegisApp extends Application {
                 }
             });
             return row;
+        });
+
+        drivesTable.setOnMouseClicked(e -> {
+            if (e.getTarget() instanceof TableView || (e.getTarget() instanceof Node && ((Node) e.getTarget()).getStyleClass().contains("filler"))) {
+                drivesTable.getSelectionModel().clearSelection();
+                showInspectorEmptyState();
+            }
         });
 
         TableColumn<StorageDevice, StorageDevice> colName = new TableColumn<>("Device / Disk");
@@ -933,6 +953,8 @@ public class AegisApp extends Application {
         drivesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
                 updateRightInspector(newVal);
+            } else {
+                showInspectorEmptyState();
             }
         });
 
@@ -954,6 +976,9 @@ public class AegisApp extends Application {
         rightInspectorPane.setMaxWidth(310);
         rightInspectorPane.setPadding(new Insets(18, 16, 18, 16));
         rightInspectorPane.setStyle("-fx-background-color: #ffffff;");
+
+        // 1. Content View (shown when drive is selected)
+        inspectorContentBox = new VBox(11);
 
         VBox graphicBox = new VBox(8);
         graphicBox.setAlignment(Pos.CENTER);
@@ -1014,7 +1039,7 @@ public class AegisApp extends Application {
         childPartitionsBox = new VBox(3);
         childPartitionsBox.setPadding(new Insets(4, 0, 0, 0));
 
-        rightInspectorPane.getChildren().addAll(
+        inspectorContentBox.getChildren().addAll(
                 graphicBox,
                 btnInspectorSearchData,
                 btnInspectorSanitize,
@@ -1023,6 +1048,29 @@ public class AegisApp extends Application {
                 propertiesBox,
                 childPartitionsBox
         );
+
+        // 2. Empty State View (shown when nothing is selected)
+        inspectorEmptyBox = new VBox(14);
+        inspectorEmptyBox.setAlignment(Pos.CENTER);
+        inspectorEmptyBox.setPadding(new Insets(60, 16, 40, 16));
+
+        Node emptyGraphic = AegisUiComponents.createDriveIllustration(130, 56);
+        emptyGraphic.setOpacity(0.50);
+
+        Label emptyTitle = new Label("No Storage Device Selected");
+        emptyTitle.setStyle("-fx-font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 14px; -fx-font-weight: 700; -fx-text-fill: #334155; -fx-text-alignment: center;");
+
+        Label emptyDesc = new Label("Select a physical drive or logical volume from the table to view device geometry, launch raw file carving, or execute certified media sanitization.");
+        emptyDesc.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 11.5px; -fx-text-fill: #94a3b8; -fx-text-alignment: center; -fx-line-spacing: 2px;");
+        emptyDesc.setWrapText(true);
+
+        Label emptyBadge = new Label("⚡ Direct Block IOCTL Active");
+        emptyBadge.setStyle("-fx-font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; -fx-font-size: 10.5px; -fx-font-weight: 600; -fx-text-fill: #059669; -fx-background-color: #ecfdf5; -fx-padding: 3 8; -fx-background-radius: 10;");
+
+        inspectorEmptyBox.getChildren().addAll(emptyGraphic, emptyTitle, emptyDesc, emptyBadge);
+
+        rightInspectorPane.getChildren().addAll(inspectorEmptyBox, inspectorContentBox);
+        showInspectorEmptyState();
 
         ScrollPane inspectorScroll = new ScrollPane(rightInspectorPane);
         inspectorScroll.setFitToWidth(true);
@@ -1069,8 +1117,28 @@ public class AegisApp extends Application {
         return lblVal;
     }
 
+    private void showInspectorEmptyState() {
+        this.selectedDevice = null;
+        if (inspectorEmptyBox != null && inspectorContentBox != null) {
+            inspectorEmptyBox.setVisible(true);
+            inspectorEmptyBox.setManaged(true);
+            inspectorContentBox.setVisible(false);
+            inspectorContentBox.setManaged(false);
+        }
+    }
+
     private void updateRightInspector(StorageDevice dev) {
+        if (dev == null) {
+            showInspectorEmptyState();
+            return;
+        }
         this.selectedDevice = dev;
+        if (inspectorEmptyBox != null && inspectorContentBox != null) {
+            inspectorEmptyBox.setVisible(false);
+            inspectorEmptyBox.setManaged(false);
+            inspectorContentBox.setVisible(true);
+            inspectorContentBox.setManaged(true);
+        }
         boolean isPhys = dev.isPhysical();
         String nameStr = dev.getModel() != null && !dev.getModel().isEmpty() ? dev.getModel() : dev.getDevicePath();
         inspectorDriveName.setText(nameStr);
@@ -2214,24 +2282,84 @@ public class AegisApp extends Application {
         Region sp = new Region();
         HBox.setHgrow(sp, Priority.ALWAYS);
 
-        btnToggleLog = new Button("Forensic Audit Log ▾");
+        btnToggleLog = new Button("Forensic Audit Terminal ▾");
         btnToggleLog.setStyle("-fx-background-color: transparent; -fx-text-fill: #0078d4; -fx-font-size: 11px; -fx-font-weight: bold; -fx-cursor: hand;");
         btnToggleLog.setOnAction(e -> toggleLog());
 
         bar.getChildren().addAll(dot, bottomStatusLabel, sp, btnToggleLog);
 
-        logDrawer = new VBox(6);
-        logDrawer.setPadding(new Insets(10, 16, 10, 16));
-        logDrawer.setStyle("-fx-background-color: #0f172a;");
+        // Apple / iOS Terminal Drawer
+        logDrawer = new VBox(0);
+        logDrawer.setStyle("-fx-background-color: #0b0f19; -fx-border-color: #1e293b; -fx-border-width: 1 0 0 0;");
         logDrawer.setVisible(false);
         logDrawer.setManaged(false);
 
+        // Terminal Top Bar
+        HBox termHeader = new HBox(10);
+        termHeader.setAlignment(Pos.CENTER_LEFT);
+        termHeader.setPadding(new Insets(8, 14, 8, 14));
+        termHeader.setStyle("-fx-background-color: #0d121f; -fx-border-color: #1e293b; -fx-border-width: 0 0 1px 0;");
+
+        // Traffic lights
+        HBox trafficLights = new HBox(6);
+        trafficLights.setAlignment(Pos.CENTER_LEFT);
+
+        Label dotRed = new Label("●");
+        dotRed.setStyle("-fx-text-fill: #ff5f56; -fx-font-size: 11px; -fx-cursor: hand;");
+        dotRed.setOnMouseClicked(e -> toggleLog());
+
+        Label dotYellow = new Label("●");
+        dotYellow.setStyle("-fx-text-fill: #ffbd2e; -fx-font-size: 11px; -fx-cursor: hand;");
+        dotYellow.setOnMouseClicked(e -> {
+            if (logConsole != null) {
+                logConsole.setPrefHeight(logConsole.getPrefHeight() == 140 ? 240 : 140);
+            }
+        });
+
+        Label dotGreen = new Label("●");
+        dotGreen.setStyle("-fx-text-fill: #27c93f; -fx-font-size: 11px; -fx-cursor: hand;");
+        dotGreen.setOnMouseClicked(e -> {
+            if (logConsole != null) {
+                logConsole.setPrefHeight(logConsole.getPrefHeight() == 360 ? 140 : 360);
+            }
+        });
+
+        trafficLights.getChildren().addAll(dotRed, dotYellow, dotGreen);
+
+        Label termTitle = new Label("ae-terminal — forensic-audit-daemon — 80x24");
+        termTitle.setStyle("-fx-font-family: -apple-system, 'SF Mono', 'JetBrains Mono', 'Consolas', monospace; -fx-font-size: 11px; -fx-font-weight: 600; -fx-text-fill: #94a3b8;");
+
+        Label termPulse = new Label("● RUNNING");
+        termPulse.setStyle("-fx-text-fill: #4ade80; -fx-font-size: 10px; -fx-font-weight: bold;");
+
+        Region termSpacer = new Region();
+        HBox.setHgrow(termSpacer, Priority.ALWAYS);
+
+        Button btnClearTerm = new Button("Clear");
+        btnClearTerm.setStyle("-fx-background-color: rgba(255, 255, 255, 0.08); -fx-text-fill: #94a3b8; -fx-font-size: 10.5px; -fx-padding: 2 8; -fx-background-radius: 4; -fx-cursor: hand;");
+        btnClearTerm.setOnAction(e -> {
+            if (logConsole != null) logConsole.clear();
+        });
+
+        Button btnCopyTerm = new Button("Copy");
+        btnCopyTerm.setStyle("-fx-background-color: rgba(255, 255, 255, 0.08); -fx-text-fill: #94a3b8; -fx-font-size: 10.5px; -fx-padding: 2 8; -fx-background-radius: 4; -fx-cursor: hand;");
+        btnCopyTerm.setOnAction(e -> {
+            if (logConsole != null) {
+                ClipboardContent cc = new ClipboardContent();
+                cc.putString(logConsole.getText());
+                Clipboard.getSystemClipboard().setContent(cc);
+                log("[TERMINAL] Audit log content copied to system clipboard.");
+            }
+        });
+
+        termHeader.getChildren().addAll(trafficLights, termTitle, termPulse, termSpacer, btnClearTerm, btnCopyTerm);
+
         logConsole = new TextArea();
         logConsole.setEditable(false);
-        logConsole.setPrefHeight(120);
-        logConsole.setStyle("-fx-control-inner-background: #020617; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11px; -fx-text-fill: #38bdf8;");
+        logConsole.setPrefHeight(140);
+        logConsole.setStyle("-fx-control-inner-background: #050811; -fx-background-color: #050811; -fx-text-fill: #e2e8f0; -fx-font-family: -apple-system, 'SF Mono', 'JetBrains Mono', 'Consolas', monospace; -fx-font-size: 11.5px;");
 
-        logDrawer.getChildren().add(logConsole);
+        logDrawer.getChildren().addAll(termHeader, logConsole);
         container.getChildren().addAll(bar, logDrawer);
         return container;
     }
@@ -2240,7 +2368,7 @@ public class AegisApp extends Application {
         logOpen = !logOpen;
         logDrawer.setVisible(logOpen);
         logDrawer.setManaged(logOpen);
-        btnToggleLog.setText(logOpen ? "Hide Forensic Log ▴" : "Forensic Audit Log ▾");
+        btnToggleLog.setText(logOpen ? "Hide Terminal ▴" : "Forensic Audit Terminal ▾");
     }
 
     private void log(String msg) {
